@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>HubTube</title>
+
+<style>
+body{
+ background:#0f0f0f;
+ color:white;
+ font-family:Arial;
+ margin:0
+}
+
+.header{
+ display:flex;
+ gap:10px;
+ padding:10px;
+ background:#181818;
+ align-items:center
+}
+
+.grid{
+ display:grid;
+ grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+ gap:10px;
+ padding:10px
+}
+
+.card{
+ background:#181818;
+ padding:10px;
+ border-radius:10px;
+ cursor:pointer
+}
+
+input,button,textarea{
+ background:#222;
+ color:white;
+ border:1px solid #333;
+ padding:6px;
+ margin:3px
+}
+
+video{
+ background:black;
+ max-height:70vh
+}
+
+.playerBox{
+ max-width:900px;
+ margin:auto
+}
+
+.comment{
+ background:#181818;
+ padding:6px;
+ margin:4px 0
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="header">
+<button onclick="show('main')">Главная</button>
+<button onclick="show('upload')">Загрузить</button>
+<button onclick="show('studio')">Моя студия</button>
+
+<input id="search" placeholder="Поиск" oninput="load()"/>
+
+<span id="user">гость</span>
+
+<button onclick="login()">Вход</button>
+<button onclick="register()">Регистрация</button>
+</div>
+
+<!-- ГЛАВНАЯ -->
+<div id="main" class="grid"></div>
+
+<!-- ПЛЕЕР -->
+<div id="player" style="display:none" class="playerBox">
+
+<video id="videoPlayer" controls style="width:100%"></video>
+
+<h2 id="vTitle"></h2>
+
+<div style="display:flex;gap:10px;align-items:center">
+
+<button onclick="likeVideo()">👍 <span id="likes">0</span></button>
+
+<button onclick="subChannel()">
+Подписаться <span id="subs">0</span>
+</button>
+
+<span>👁 <span id="views">0</span></span>
+
+</div>
+
+<h3>Комментарии</h3>
+
+<textarea id="cText"></textarea><br>
+<button onclick="addComment()">Отправить</button>
+
+<div id="comments"></div>
+
+<h3>Рекомендации</h3>
+<div id="recs" class="grid"></div>
+
+</div>
+
+<!-- ЗАГРУЗКА -->
+<div id="upload" style="display:none;padding:10px">
+
+<h3>Загрузить видео</h3>
+
+<input id="title" placeholder="Название"/><br>
+
+<textarea id="desc" placeholder="Описание"></textarea><br>
+
+Обложка:<input type="file" id="thumb"/><br>
+Видео:<input type="file" id="file"/><br>
+
+<button onclick="upload()">Загрузить</button>
+</div>
+
+<!-- СТУДИЯ -->
+<div id="studio" style="display:none;padding:10px"></div>
+
+<script type="module">
+
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+
+import{
+getAuth,createUserWithEmailAndPassword,
+signInWithEmailAndPassword,onAuthStateChanged
+}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+import{
+getFirestore,collection,addDoc,getDoc,
+getDocs,query,orderBy,where,doc,updateDoc
+}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+import{
+getStorage,ref,uploadBytes,getDownloadURL
+}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+
+// ============== ВСТАВЬ СВОЙ CONFIG =================
+const firebaseConfig={
+apiKey:"ТУТ",
+authDomain:"ТУТ",
+projectId:"ТУТ",
+storageBucket:"ТУТ",
+appId:"ТУТ"
+};
+// ===================================================
+
+const app=initializeApp(firebaseConfig);
+const auth=getAuth(app);
+const db=getFirestore(app);
+const storage=getStorage(app);
+
+let currentVideoId=null;
+let currentOwner=null;
+
+// РЕГИСТРАЦИЯ
+window.register=async()=>{
+
+const email=prompt("email");
+const pass=prompt("pass");
+const nick=prompt("ник на канале");
+
+await createUserWithEmailAndPassword(auth,email,pass);
+
+await addDoc(collection(db,"channels"),{
+uid:auth.currentUser.uid,
+nick,
+subs:0,
+verified:false
+});
+
+alert("аккаунт создан");
+}
+
+// ВХОД
+window.login=async()=>{
+await signInWithEmailAndPassword(
+auth,
+prompt("email"),
+prompt("pass")
+);
+}
+
+onAuthStateChanged(auth,u=>{
+user.innerText=u?u.email:"гость"
+});
+
+// ЗАГРУЗКА ВИДЕО
+window.upload=async()=>{
+
+if(!auth.currentUser)return alert("войдите");
+
+const f=file.files[0];
+const t=thumb.files[0];
+
+const rv=ref(storage,"videos/"+Date.now()+f.name);
+await uploadBytes(rv,f);
+const url=await getDownloadURL(rv);
+
+let thumbUrl="";
+if(t){
+ const rt=ref(storage,"thumbs/"+Date.now()+t.name);
+ await uploadBytes(rt,t);
+ thumbUrl=await getDownloadURL(rt);
+}
+
+await addDoc(collection(db,"videos"),{
+title:title.value,
+desc:desc.value,
+url,
+thumb:thumbUrl,
+uid:auth.currentUser.uid,
+views:0,
+likes:0,
+time:Date.now()
+});
+
+alert("видео загружено");
+load();
+}
+
+// ГЛАВНАЯ + ПОИСК
+window.load=async()=>{
+
+main.innerHTML="";
+
+let s=await getDocs(
+query(collection(db,"videos"),orderBy("time","desc"))
+);
+
+s.forEach(d=>{
+
+const v=d.data();
+
+if(search.value &&
+ !v.title.toLowerCase()
+ .includes(search.value.toLowerCase()))return;
+
+main.innerHTML+=`
+
+<div class="card" onclick="openVideo('${d.id}')">
+
+<img src="${v.thumb||''}" width="100%"/>
+
+<h4>${v.title}</h4>
+
+<div>👁 ${v.views||0} | 👍 ${v.likes||0}</div>
+
+</div>`;
+});
+}
+
+// ОТКРЫТЬ ВИДЕО
+window.openVideo=async(id)=>{
+
+currentVideoId=id;
+
+show('player');
+
+const d=await getDoc(doc(db,"videos",id));
+const v=d.data();
+
+currentOwner=v.uid;
+
+videoPlayer.src=v.url;
+vTitle.innerText=v.title;
+
+await updateDoc(doc(db,"videos",id),{
+views:(v.views||0)+1
+});
+
+views.innerText=v.views+1;
+likes.innerText=v.likes||0;
+
+loadComments();
+loadRecs(v.title);
+
+// подписчики канала
+const ch=await getDocs(
+query(collection(db,"channels"),
+where("uid","==",v.uid))
+);
+
+ch.forEach(c=>{
+ subs.innerText=c.data().subs||0
+});
+}
+
+// ЛАЙК
+window.likeVideo=async()=>{
+
+const d=await getDoc(doc(db,"videos",currentVideoId));
+
+await updateDoc(doc(db,"videos",currentVideoId),{
+likes:(d.data().likes||0)+1
+});
+
+likes.innerText=d.data().likes+1;
+}
+
+// ПОДПИСКА
+window.subChannel=async()=>{
+
+const q=await getDocs(
+query(collection(db,"channels"),
+where("uid","==",currentOwner))
+);
+
+q.forEach(async c=>{
+
+const s=c.data().subs||0;
+
+await updateDoc(doc(db,"channels",c.id),{
+subs:s+1,
+verified:s+1>=100
+});
+
+subs.innerText=s+1;
+
+if(s+1==100)
+ alert("Канал получил верификацию ✔");
+});
+}
+
+// КОММЕНТЫ
+window.addComment=async()=>{
+
+await addDoc(collection(db,"comments"),{
+video:currentVideoId,
+text:cText.value,
+uid:auth.currentUser.uid,
+time:Date.now()
+});
+
+cText.value="";
+loadComments();
+}
+
+async function loadComments(){
+
+comments.innerHTML="";
+
+const q=await getDocs(
+query(collection(db,"comments"),
+where("video","==",currentVideoId))
+);
+
+q.forEach(d=>{
+
+comments.innerHTML+=`
+<div class="comment">
+${d.data().text}
+</div>`;
+});
+}
+
+// РЕКОМЕНДАЦИИ
+async function loadRecs(title){
+
+recs.innerHTML="";
+
+const all=await getDocs(collection(db,"videos"));
+
+all.forEach(d=>{
+
+const v=d.data();
+
+if(v.title
+.toLowerCase()
+.includes(title.split(" ")[0].toLowerCase())){
+
+recs.innerHTML+=`
+
+<div class="card" onclick="openVideo('${d.id}')">
+
+<img src="${v.thumb}" width="100%"/>
+
+${v.title}
+
+</div>`;
+}
+});
+}
+
+// СТУДИЯ АВТОРА
+window.showStudio=async()=>{
+
+studio.innerHTML="<h2>Мои видео</h2>";
+
+const q=query(collection(db,"videos"),
+where("uid","==",auth.currentUser.uid));
+
+const s=await getDocs(q);
+
+s.forEach(d=>{
+
+const v=d.data();
+
+studio.innerHTML+=`
+
+<div class="card">
+
+<h4>${v.title}</h4>
+
+👁 ${v.views} | 👍 ${v.likes}
+
+</div>`;
+});
+}
+
+// НАВИГАЦИЯ
+window.show=id=>{
+
+main.style.display=id=="main"?"grid":"none";
+player.style.display=id=="player"?"block":"none";
+upload.style.display=id=="upload"?"block":"none";
+studio.style.display=id=="studio"?"block":"none";
+
+if(id=="studio")showStudio();
+}
+
+load();
+
+</script>
+</body>
+</html>
