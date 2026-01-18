@@ -1,439 +1,404 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" class="dark">
 <head>
-<meta charset="utf-8"/>
-<title>HubTube</title>
-
-<style>
-body{
- background:#0f0f0f;
- color:white;
- font-family:Arial;
- margin:0
-}
-
-.header{
- display:flex;
- gap:10px;
- padding:10px;
- background:#181818;
- align-items:center
-}
-
-.grid{
- display:grid;
- grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
- gap:10px;
- padding:10px
-}
-
-.card{
- background:#181818;
- padding:10px;
- border-radius:10px;
- cursor:pointer
-}
-
-input,button,textarea{
- background:#222;
- color:white;
- border:1px solid #333;
- padding:6px;
- margin:3px
-}
-
-video{
- background:black;
- max-height:70vh
-}
-
-.playerBox{
- max-width:900px;
- margin:auto
-}
-
-.comment{
- background:#181818;
- padding:6px;
- margin:4px 0
-}
-
-</style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HubTube - Видеохостинг</title>
+    <meta name="description" content="HubTube - бесплатный видеохостинг. Загружайте и смотрите видео, подписывайтесь на каналы, оставляйте комментарии.">
+    <meta name="author" content="HubTube">
+    
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
+    
+    <!-- Стили -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Конфигурация Firebase -->
+    <script src="firebase-config.js"></script>
 </head>
-
 <body>
-
-<div class="header">
-<button onclick="show('main')">Главная</button>
-<button onclick="show('upload')">Загрузить</button>
-<button onclick="show('studio')">Моя студия</button>
-
-<input id="search" placeholder="Поиск" oninput="load()"/>
-
-<span id="user">гость</span>
-
-<button onclick="login()">Вход</button>
-<button onclick="register()">Регистрация</button>
-</div>
-
-<!-- ГЛАВНАЯ -->
-<div id="main" class="grid"></div>
-
-<!-- ПЛЕЕР -->
-<div id="player" style="display:none" class="playerBox">
-
-<video id="videoPlayer" controls style="width:100%"></video>
-
-<h2 id="vTitle"></h2>
-
-<div style="display:flex;gap:10px;align-items:center">
-
-<button onclick="likeVideo()">👍 <span id="likes">0</span></button>
-
-<button onclick="subChannel()">
-Подписаться <span id="subs">0</span>
-</button>
-
-<span>👁 <span id="views">0</span></span>
-
-</div>
-
-<h3>Комментарии</h3>
-
-<textarea id="cText"></textarea><br>
-<button onclick="addComment()">Отправить</button>
-
-<div id="comments"></div>
-
-<h3>Рекомендации</h3>
-<div id="recs" class="grid"></div>
-
-</div>
-
-<!-- ЗАГРУЗКА -->
-<div id="upload" style="display:none;padding:10px">
-
-<h3>Загрузить видео</h3>
-
-<input id="title" placeholder="Название"/><br>
-
-<textarea id="desc" placeholder="Описание"></textarea><br>
-
-Обложка:<input type="file" id="thumb"/><br>
-Видео:<input type="file" id="file"/><br>
-
-<button onclick="upload()">Загрузить</button>
-</div>
-
-<!-- СТУДИЯ -->
-<div id="studio" style="display:none;padding:10px"></div>
-
-<script type="module">
-
-import{initializeApp}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-
-import{
-getAuth,createUserWithEmailAndPassword,
-signInWithEmailAndPassword,onAuthStateChanged
-}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-
-import{
-getFirestore,collection,addDoc,getDoc,
-getDocs,query,orderBy,where,doc,updateDoc
-}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-import{
-getStorage,ref,uploadBytes,getDownloadURL
-}from"https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
-
-// ============== ВСТАВЬ СВОЙ CONFIG =================
-const firebaseConfig = {
-  apiKey: "AIzaSyC9vb1IdLqZw1_zbjkmbtmmvY0nDy8MktQ",
-  authDomain: "hubtube-4f2ed.firebaseapp.com",
-  projectId: "hubtube-4f2ed",
-  storageBucket: "hubtube-4f2ed.firebasestorage.app",
-  messagingSenderId: "462882556818",
-  appId: "1:462882556818:web:a37b741b4664f32b908f4b",
-  measurementId: "G-RZCLP45D1L"
-};
-// ===================================================
-
-const app=initializeApp(firebaseConfig);
-const auth=getAuth(app);
-const db=getFirestore(app);
-const storage=getStorage(app);
-
-let currentVideoId=null;
-let currentOwner=null;
-
-// РЕГИСТРАЦИЯ
-window.register=async()=>{
-
-const email=prompt("email");
-const pass=prompt("pass");
-const nick=prompt("ник на канале");
-
-await createUserWithEmailAndPassword(auth,email,pass);
-
-await addDoc(collection(db,"channels"),{
-uid:auth.currentUser.uid,
-nick,
-subs:0,
-verified:false
-});
-
-alert("аккаунт создан");
-}
-
-// ВХОД
-window.login=async()=>{
-await signInWithEmailAndPassword(
-auth,
-prompt("email"),
-prompt("pass")
-);
-}
-
-onAuthStateChanged(auth,u=>{
-user.innerText=u?u.email:"гость"
-});
-
-// ЗАГРУЗКА ВИДЕО
-window.upload=async()=>{
-
-if(!auth.currentUser)return alert("войдите");
-
-const f=file.files[0];
-const t=thumb.files[0];
-
-const rv=ref(storage,"videos/"+Date.now()+f.name);
-await uploadBytes(rv,f);
-const url=await getDownloadURL(rv);
-
-let thumbUrl="";
-if(t){
- const rt=ref(storage,"thumbs/"+Date.now()+t.name);
- await uploadBytes(rt,t);
- thumbUrl=await getDownloadURL(rt);
-}
-
-await addDoc(collection(db,"videos"),{
-title:title.value,
-desc:desc.value,
-url,
-thumb:thumbUrl,
-uid:auth.currentUser.uid,
-views:0,
-likes:0,
-time:Date.now()
-});
-
-alert("видео загружено");
-load();
-}
-
-// ГЛАВНАЯ + ПОИСК
-window.load=async()=>{
-
-main.innerHTML="";
-
-let s=await getDocs(
-query(collection(db,"videos"),orderBy("time","desc"))
-);
-
-s.forEach(d=>{
-
-const v=d.data();
-
-if(search.value &&
- !v.title.toLowerCase()
- .includes(search.value.toLowerCase()))return;
-
-main.innerHTML+=`
-
-<div class="card" onclick="openVideo('${d.id}')">
-
-<img src="${v.thumb||''}" width="100%"/>
-
-<h4>${v.title}</h4>
-
-<div>👁 ${v.views||0} | 👍 ${v.likes||0}</div>
-
-</div>`;
-});
-}
-
-// ОТКРЫТЬ ВИДЕО
-window.openVideo=async(id)=>{
-
-currentVideoId=id;
-
-show('player');
-
-const d=await getDoc(doc(db,"videos",id));
-const v=d.data();
-
-currentOwner=v.uid;
-
-videoPlayer.src=v.url;
-vTitle.innerText=v.title;
-
-await updateDoc(doc(db,"videos",id),{
-views:(v.views||0)+1
-});
-
-views.innerText=v.views+1;
-likes.innerText=v.likes||0;
-
-loadComments();
-loadRecs(v.title);
-
-// подписчики канала
-const ch=await getDocs(
-query(collection(db,"channels"),
-where("uid","==",v.uid))
-);
-
-ch.forEach(c=>{
- subs.innerText=c.data().subs||0
-});
-}
-
-// ЛАЙК
-window.likeVideo=async()=>{
-
-const d=await getDoc(doc(db,"videos",currentVideoId));
-
-await updateDoc(doc(db,"videos",currentVideoId),{
-likes:(d.data().likes||0)+1
-});
-
-likes.innerText=d.data().likes+1;
-}
-
-// ПОДПИСКА
-window.subChannel=async()=>{
-
-const q=await getDocs(
-query(collection(db,"channels"),
-where("uid","==",currentOwner))
-);
-
-q.forEach(async c=>{
-
-const s=c.data().subs||0;
-
-await updateDoc(doc(db,"channels",c.id),{
-subs:s+1,
-verified:s+1>=100
-});
-
-subs.innerText=s+1;
-
-if(s+1==100)
- alert("Канал получил верификацию ✔");
-});
-}
-
-// КОММЕНТЫ
-window.addComment=async()=>{
-
-await addDoc(collection(db,"comments"),{
-video:currentVideoId,
-text:cText.value,
-uid:auth.currentUser.uid,
-time:Date.now()
-});
-
-cText.value="";
-loadComments();
-}
-
-async function loadComments(){
-
-comments.innerHTML="";
-
-const q=await getDocs(
-query(collection(db,"comments"),
-where("video","==",currentVideoId))
-);
-
-q.forEach(d=>{
-
-comments.innerHTML+=`
-<div class="comment">
-${d.data().text}
-</div>`;
-});
-}
-
-// РЕКОМЕНДАЦИИ
-async function loadRecs(title){
-
-recs.innerHTML="";
-
-const all=await getDocs(collection(db,"videos"));
-
-all.forEach(d=>{
-
-const v=d.data();
-
-if(v.title
-.toLowerCase()
-.includes(title.split(" ")[0].toLowerCase())){
-
-recs.innerHTML+=`
-
-<div class="card" onclick="openVideo('${d.id}')">
-
-<img src="${v.thumb}" width="100%"/>
-
-${v.title}
-
-</div>`;
-}
-});
-}
-
-// СТУДИЯ АВТОРА
-window.showStudio=async()=>{
-
-studio.innerHTML="<h2>Мои видео</h2>";
-
-const q=query(collection(db,"videos"),
-where("uid","==",auth.currentUser.uid));
-
-const s=await getDocs(q);
-
-s.forEach(d=>{
-
-const v=d.data();
-
-studio.innerHTML+=`
-
-<div class="card">
-
-<h4>${v.title}</h4>
-
-👁 ${v.views} | 👍 ${v.likes}
-
-</div>`;
-});
-}
-
-// НАВИГАЦИЯ
-window.show=id=>{
-
-main.style.display=id=="main"?"grid":"none";
-player.style.display=id=="player"?"block":"none";
-upload.style.display=id=="upload"?"block":"none";
-studio.style.display=id=="studio"?"block":"none";
-
-if(id=="studio")showStudio();
-}
-
-load();
-
-</script>
+    <!-- Header -->
+    <header>
+        <div class="header-container">
+            <!-- Logo -->
+            <a href="#" class="logo" id="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-play"></i>
+                </div>
+                <span class="logo-text">Hub<span>Tube</span></span>
+            </a>
+            
+            <!-- Тематика -->
+            <div class="themes-container" id="themesContainer">
+                <button class="theme-btn active" data-theme="all">Все</button>
+                <button class="theme-btn" data-theme="videogames">Видеоигры</button>
+                <button class="theme-btn" data-theme="cartoons">Мультфильмы</button>
+            </div>
+            
+            <!-- Search Bar -->
+            <div class="search-container">
+                <input type="text" class="search-input" placeholder="Поиск видео..." id="searchInput">
+                <button class="search-button" id="searchButton">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+            
+            <!-- Уведомления -->
+            <div class="notifications-container">
+                <button class="btn-icon" id="notificationsBtn">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+                </button>
+                <div class="notifications-dropdown" id="notificationsDropdown" style="display: none;">
+                    <div class="notifications-header">
+                        <h3>Уведомления</h3>
+                        <button class="btn-text" id="markAllAsRead">Прочитать все</button>
+                    </div>
+                    <div class="notifications-list" id="notificationsList">
+                        <!-- Уведомления будут здесь -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- User Menu -->
+            <div class="user-menu" id="userMenu">
+                <div class="auth-buttons" id="authButtons">
+                    <button class="btn btn-login" id="loginBtn">
+                        <i class="fas fa-sign-in-alt"></i> Войти
+                    </button>
+                    <button class="btn btn-register" id="registerBtn">
+                        <i class="fas fa-user-plus"></i> Регистрация
+                    </button>
+                </div>
+                
+                <div class="logged-in-buttons" id="loggedInButtons" style="display: none;">
+                    <button class="btn btn-upload" id="uploadBtn">
+                        <i class="fas fa-upload"></i> Загрузить
+                    </button>
+                    <button class="btn-icon" id="studioBtn" title="Студия">
+                        <i class="fas fa-tv"></i>
+                    </button>
+                    <button class="user-button" id="userButton">
+                        <div class="user-avatar" id="userAvatar">U</div>
+                        <span id="username">Пользователь</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Video Categories -->
+    <div class="categories" id="categories">
+        <button class="category-btn active" data-category="all">Все видео</button>
+        <button class="category-btn" data-category="music">Музыка</button>
+        <button class="category-btn" data-category="gaming">Игры</button>
+        <button class="category-btn" data-category="education">Образование</button>
+        <button class="category-btn" data-category="entertainment">Развлечения</button>
+        <button class="category-btn" data-category="sports">Спорт</button>
+        <button class="category-btn" data-category="tech">Технологии</button>
+        <button class="category-btn" data-category="news">Новости</button>
+        <button class="category-btn" data-category="short">Shorts</button>
+    </div>
+    
+    <!-- Main Content -->
+    <main>
+        <div class="video-grid" id="videoGrid">
+            <!-- Videos will be loaded here -->
+        </div>
+    </main>
+    
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <p>© 2026 HubTube - Бесплатный видеохостинг</p>
+            <p>Все права защищены | Реальные данные через Firebase</p>
+        </div>
+    </footer>
+    
+    <!-- Auth Modal -->
+    <div class="modal" id="authModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="authModalTitle">Вход в аккаунт</h2>
+                <button class="close-modal" id="closeAuthModal">&times;</button>
+            </div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="loginTab">Вход</button>
+                <button class="auth-tab" id="registerTab">Регистрация</button>
+            </div>
+            
+            <div class="alert" id="authAlert"></div>
+            
+            <!-- Login Form -->
+            <form class="auth-form active" id="loginForm">
+                <div class="form-group">
+                    <label class="form-label" for="loginEmail">Email</label>
+                    <input type="email" class="form-input" id="loginEmail" placeholder="your@email.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="loginPassword">Пароль</label>
+                    <input type="password" class="form-input" id="loginPassword" placeholder="Ваш пароль" required>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn-submit">Войти</button>
+                    <button type="button" class="btn-cancel" id="cancelAuth">Отмена</button>
+                </div>
+            </form>
+            
+            <!-- Register Form -->
+            <form class="auth-form" id="registerForm">
+                <div class="form-group">
+                    <label class="form-label" for="registerUsername">Имя пользователя *</label>
+                    <input type="text" class="form-input" id="registerUsername" placeholder="Ваше отображаемое имя" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerUniqueName">Уникальное имя (@username) *</label>
+                    <div class="unique-name-input">
+                        <span class="at-symbol">@</span>
+                        <input type="text" class="form-input" id="registerUniqueName" placeholder="username" required>
+                    </div>
+                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                        Это имя будет использоваться в вашей ссылке: hubtube.com/@username
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerEmail">Email *</label>
+                    <input type="email" class="form-input" id="registerEmail" placeholder="your@email.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerPassword">Пароль *</label>
+                    <input type="password" class="form-input" id="registerPassword" placeholder="Не менее 6 символов" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="registerConfirmPassword">Подтвердите пароль *</label>
+                    <input type="password" class="form-input" id="registerConfirmPassword" placeholder="Повторите пароль" required>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn-submit">Зарегистрироваться</button>
+                    <button type="button" class="btn-cancel" id="cancelRegister">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Upload Video Modal -->
+    <div class="modal" id="uploadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Загрузить видео</h2>
+                <button class="close-modal" id="closeUploadModal">&times;</button>
+            </div>
+            
+            <div class="alert" id="uploadAlert"></div>
+            
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label class="form-label" for="videoTitle">Название видео *</label>
+                    <input type="text" class="form-input" id="videoTitle" placeholder="Креативное название" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="videoDescription">Описание</label>
+                    <textarea class="form-textarea" id="videoDescription" placeholder="Расскажите о вашем видео..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="videoType">Тип видео *</label>
+                    <select class="form-select" id="videoType" required>
+                        <option value="regular">Обычное видео</option>
+                        <option value="short">Shorts (вертикальное)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="videoUrl">Ссылка на видео *</label>
+                    <input type="url" class="form-input" id="videoUrl" placeholder="https://example.com/video.mp4" required>
+                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                        Поддерживаются прямые ссылки на MP4, WebM, YouTube, Vimeo
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="thumbnailUrl">Ссылка на обложку</label>
+                    <input type="url" class="form-input" id="thumbnailUrl" placeholder="https://example.com/image.jpg">
+                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
+                        Рекомендуемый размер: 1280x720px (для обычных видео) или 1080x1920px (для Shorts)
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="videoCategory">Категория</label>
+                    <select class="form-select" id="videoCategory">
+                        <option value="entertainment">Развлечения</option>
+                        <option value="music">Музыка</option>
+                        <option value="gaming">Игры</option>
+                        <option value="education">Образование</option>
+                        <option value="sports">Спорт</option>
+                        <option value="tech">Технологии</option>
+                        <option value="news">Новости</option>
+                        <option value="videogames">Видеоигры</option>
+                        <option value="cartoons">Мультфильмы</option>
+                        <option value="short">Shorts</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="videoTags">Теги (через запятую)</label>
+                    <input type="text" class="form-input" id="videoTags" placeholder="видео, природа, путешествие">
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn-submit">
+                        <i class="fas fa-upload"></i> Опубликовать видео
+                    </button>
+                    <button type="button" class="btn-cancel" id="cancelUpload">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Video Player Modal -->
+    <div class="modal" id="videoPlayerModal">
+        <div class="modal-content video-player-modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="playerTitle">Просмотр видео</h2>
+                <button class="close-modal" id="closePlayerModal">&times;</button>
+            </div>
+            
+            <div class="video-player-container" id="videoPlayerContainer">
+                <!-- Video player will be inserted here -->
+            </div>
+            
+            <div class="video-info">
+                <div class="video-header">
+                    <h3 id="playerVideoTitle"></h3>
+                    <div class="video-actions">
+                        <button class="btn-like" id="likeBtn">
+                            <i class="fas fa-thumbs-up"></i>
+                            <span id="likeCount">0</span>
+                        </button>
+                        <button class="btn-subscribe" id="subscribeBtn">
+                            <i class="fas fa-user-plus"></i> Подписаться
+                        </button>
+                    </div>
+                </div>
+                <div class="channel-info">
+                    <div class="channel-avatar" id="playerChannelAvatar"></div>
+                    <div>
+                        <div class="channel-name">
+                            <span id="playerChannelName"></span>
+                            <span class="verified-badge" id="playerVerifiedBadge" style="display: none;">
+                                <i class="fas fa-check-circle"></i>
+                            </span>
+                        </div>
+                        <div id="playerSubscribers"></div>
+                    </div>
+                </div>
+                <div class="video-stats">
+                    <span id="playerVideoViews"></span>
+                    <span>•</span>
+                    <span id="playerVideoDate"></span>
+                </div>
+                <p id="playerVideoDescription"></p>
+                
+                <!-- Комментарии -->
+                <div class="comments-section">
+                    <h3>Комментарии (<span id="commentsCount">0</span>)</h3>
+                    
+                    <!-- Закрепленный комментарий -->
+                    <div class="pinned-comment" id="pinnedComment" style="display: none;">
+                        <div class="comment-header">
+                            <span class="comment-author">
+                                <i class="fas fa-thumbtack"></i> Закреплено автором
+                            </span>
+                            <div class="comment-actions">
+                                <button class="btn-icon heart-comment" title="Сердечко от автора">
+                                    <i class="fas fa-heart"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="comment-content" id="pinnedCommentContent"></div>
+                    </div>
+                    
+                    <!-- Форма комментария -->
+                    <div class="comment-form" id="commentForm">
+                        <div class="user-avatar-small" id="commentUserAvatar">U</div>
+                        <div class="comment-input-container">
+                            <input type="text" class="comment-input" id="commentInput" placeholder="Добавьте комментарий...">
+                            <button class="btn-submit-comment" id="submitComment">Отправить</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Список комментариев -->
+                    <div class="comments-list" id="commentsList">
+                        <!-- Комментарии загружаются здесь -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Profile Modal -->
+    <div class="modal" id="editProfileModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Редактирование профиля</h2>
+                <button class="close-modal" id="closeEditProfileModal">&times;</button>
+            </div>
+            
+            <div class="alert" id="editProfileAlert"></div>
+            
+            <form id="editProfileForm">
+                <div class="form-group">
+                    <label class="form-label" for="editUsername">Имя канала *</label>
+                    <input type="text" class="form-input" id="editUsername" placeholder="Имя вашего канала" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="editBio">Описание канала</label>
+                    <textarea class="form-textarea" id="editBio" placeholder="Расскажите о вашем канале..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="editAvatarUrl">Ссылка на аватар</label>
+                    <input type="url" class="form-input" id="editAvatarUrl" placeholder="https://example.com/avatar.jpg">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="editBannerUrl">Ссылка на баннер канала</label>
+                    <input type="url" class="form-input" id="editBannerUrl" placeholder="https://example.com/banner.jpg">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="editLinks">Ссылки (каждая с новой строки)</label>
+                    <textarea class="form-textarea" id="editLinks" placeholder="https://example.com"></textarea>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" class="btn-submit">Сохранить изменения</button>
+                    <button type="button" class="btn-cancel" id="cancelEditProfile">Отмена</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- JavaScript -->
+    <script src="script.js"></script>
 </body>
 </html>
