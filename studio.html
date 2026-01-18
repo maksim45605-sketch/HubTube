@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Студия HubTube</title>
+    
+    <!-- Иконки -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <!-- Стили -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Конфигурация Firebase -->
+    <script src="firebase-config.js"></script>
+</head>
+<body>
+    <div class="studio-container">
+        <!-- Header -->
+        <header class="studio-header">
+            <div class="studio-header-content">
+                <a href="index.html" class="btn-back">
+                    <i class="fas fa-arrow-left"></i> Назад
+                </a>
+                <h1>Студия HubTube</h1>
+                <div class="studio-channel-info">
+                    <div class="channel-avatar-large" id="studioAvatar">U</div>
+                    <div>
+                        <h2 id="studioChannelName">Канал</h2>
+                        <p id="studioSubscribers">0 подписчиков</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <main class="studio-main">
+            <!-- Статистика -->
+            <section class="studio-section">
+                <h2>Аналитика канала</h2>
+                <div class="studio-stats" id="studioStats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalViews">0</div>
+                        <div class="stat-label">Всего просмотров</div>
+                        <div class="stat-change positive" id="viewsChange">+0 за неделю</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalSubscribers">0</div>
+                        <div class="stat-label">Подписчики</div>
+                        <div class="stat-change positive" id="subscribersChange">+0 за неделю</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalVideos">0</div>
+                        <div class="stat-label">Видео</div>
+                        <div class="stat-change positive" id="videosChange">+0 за неделю</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalLikes">0</div>
+                        <div class="stat-label">Лайки</div>
+                        <div class="stat-change positive" id="likesChange">+0 за неделю</div>
+                    </div>
+                </div>
+                
+                <div class="period-selector">
+                    <button class="period-btn active" data-period="week">Неделя</button>
+                    <button class="period-btn" data-period="month">Месяц</button>
+                    <button class="period-btn" data-period="all">Все время</button>
+                </div>
+            </section>
+            
+            <!-- Мои видео -->
+            <section class="studio-section">
+                <div class="section-header">
+                    <h2>Мои видео</h2>
+                    <a href="index.html" class="btn-upload" onclick="window.open('index.html', '_self'); return false;">
+                        <i class="fas fa-upload"></i> Загрузить новое
+                    </a>
+                </div>
+                <div class="studio-videos" id="studioVideos">
+                    <!-- Видео загружаются здесь -->
+                </div>
+            </section>
+            
+            <!-- Активность -->
+            <section class="studio-section">
+                <h2>Активность</h2>
+                <div class="activity-list" id="activityList">
+                    <!-- Активность загружается здесь -->
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="script.js"></script>
+    <script>
+        // Специфичный код для студии
+        class StudioManager {
+            constructor() {
+                this.auth = auth;
+                this.db = db;
+                this.currentUser = null;
+                this.currentUserData = null;
+                this.currentPeriod = 'week';
+            }
+            
+            async init() {
+                this.auth.onAuthStateChanged(async (user) => {
+                    if (user) {
+                        this.currentUser = user;
+                        await this.loadUserData();
+                        await this.loadAnalytics();
+                        await this.loadVideos();
+                        await this.loadActivity();
+                    } else {
+                        // Если пользователь не авторизован, перенаправляем на главную
+                        window.location.href = 'index.html';
+                    }
+                });
+            }
+            
+            async loadUserData() {
+                const userDoc = await this.db.collection('users').doc(this.currentUser.uid).get();
+                if (userDoc.exists) {
+                    this.currentUserData = userDoc.data();
+                    
+                    // Обновляем информацию о канале
+                    document.getElementById('studioChannelName').textContent = this.currentUserData.username;
+                    document.getElementById('studioSubscribers').textContent = 
+                        `${this.formatNumber(this.currentUserData.subscribers || 0)} подписчиков`;
+                    
+                    const studioAvatar = document.getElementById('studioAvatar');
+                    if (this.currentUserData.avatarUrl) {
+                        studioAvatar.innerHTML = `<img src="${this.currentUserData.avatarUrl}" alt="${this.currentUserData.username}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    } else {
+                        studioAvatar.textContent = this.currentUserData.username.charAt(0).toUpperCase();
+                        studioAvatar.style.background = this.currentUserData.avatarColor;
+                    }
+                }
+            }
+            
+            async loadAnalytics() {
+                if (!this.currentUser) return;
+                
+                // В реальном приложении здесь будет запрос к аналитике
+                // Для демо используем фиктивные данные
+                
+                const analytics = {
+                    views: 12500,
+                    subscribers: 350,
+                    videos: 15,
+                    likes: 2450,
+                    viewsChange: 1250,
+                    subscribersChange: 25,
+                    videosChange: 3,
+                    likesChange: 150
+                };
+                
+                // Обновляем статистику
+                document.getElementById('totalViews').textContent = this.formatNumber(analytics.views);
+                document.getElementById('totalSubscribers').textContent = this.formatNumber(analytics.subscribers);
+                document.getElementById('totalVideos').textContent = this.formatNumber(analytics.videos);
+                document.getElementById('totalLikes').textContent = this.formatNumber(analytics.likes);
+                
+                document.getElementById('viewsChange').textContent = `+${this.formatNumber(analytics.viewsChange)} за неделю`;
+                document.getElementById('subscribersChange').textContent = `+${this.formatNumber(analytics.subscribersChange)} за неделю`;
+                document.getElementById('videosChange').textContent = `+${this.formatNumber(analytics.videosChange)} за неделю`;
+                document.getElementById('likesChange').textContent = `+${this.formatNumber(analytics.likesChange)} за неделю`;
+            }
+            
+            async loadVideos() {
+                if (!this.currentUser) return;
+                
+                const snapshot = await this.db.collection('videos')
+                    .where('userId', '==', this.currentUser.uid)
+                    .orderBy('createdAt', 'desc')
+                    .limit(12)
+                    .get();
+                
+                const videosGrid = document.getElementById('studioVideos');
+                videosGrid.innerHTML = '';
+                
+                if (snapshot.empty) {
+                    videosGrid.innerHTML = `
+                        <div class="empty-state" style="grid-column: 1/-1; padding: 40px 0;">
+                            <i class="fas fa-video"></i>
+                            <h3>Нет видео</h3>
+                            <p>Загрузите ваше первое видео!</p>
+                            <a href="index.html" class="btn-upload" style="margin-top: 20px;">
+                                <i class="fas fa-upload"></i> Загрузить видео
+                            </a>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                snapshot.forEach(doc => {
+                    const video = {
+                        id: doc.id,
+                        ...doc.data()
+                    };
+                    
+                    const videoElement = document.createElement('div');
+                    videoElement.className = 'studio-video-item';
+                    
+                    const videoDate = video.createdAt ? this.formatDate(video.createdAt.toDate()) : 'Недавно';
+                    
+                    videoElement.innerHTML = `
+                        <div class="studio-video-thumbnail">
+                            <img src="${video.thumbnail || 'https://images.unsplash.com/photo-1536240478700-b869070f9279?w=1280&h=720&fit=crop'}" 
+                                 alt="${video.title}">
+                        </div>
+                        <div class="studio-video-info">
+                            <h3 class="studio-video-title">${video.title}</h3>
+                            <div class="studio-video-stats">
+                                <span><i class="fas fa-eye"></i> ${this.formatNumber(video.views || 0)}</span>
+                                <span><i class="fas fa-thumbs-up"></i> ${this.formatNumber(video.likes || 0)}</span>
+                                <span><i class="fas fa-comment"></i> ${this.formatNumber(video.comments || 0)}</span>
+                            </div>
+                            <div class="video-date">${videoDate}</div>
+                        </div>
+                    `;
+                    
+                    videoElement.addEventListener('click', () => {
+                        window.open(`index.html#video=${video.id}`, '_blank');
+                    });
+                    
+                    videosGrid.appendChild(videoElement);
+                });
+            }
+            
+            async loadActivity() {
+                if (!this.currentUser) return;
+                
+                // Загружаем последние действия
+                const activityList = document.getElementById('activityList');
+                
+                // Фиктивные данные активности
+                const activities = [
+                    {
+                        type: 'view',
+                        message: 'Ваше видео "Как создать сайт за 1 час" набрало 1000 просмотров',
+                        time: '2 часа назад'
+                    },
+                    {
+                        type: 'subscriber',
+                        message: 'Вы получили 5 новых подписчиков',
+                        time: '5 часов назад'
+                    },
+                    {
+                        type: 'comment',
+                        message: 'Новый комментарий к видео "Лучшие моменты игр 2026"',
+                        time: 'Вчера'
+                    },
+                    {
+                        type: 'like',
+                        message: 'Ваше видео получило 50 новых лайков',
+                        time: '2 дня назад'
+                    }
+                ];
+                
+                activityList.innerHTML = activities.map(activity => `
+                    <div class="activity-item">
+                        <div class="activity-icon">
+                            ${this.getActivityIcon(activity.type)}
+                        </div>
+                        <div class="activity-content">
+                            <div class="activity-message">${activity.message}</div>
+                            <div class="activity-time">${activity.time}</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            getActivityIcon(type) {
+                switch(type) {
+                    case 'view': return '<i class="fas fa-eye"></i>';
+                    case 'subscriber': return '<i class="fas fa-user-plus"></i>';
+                    case 'comment': return '<i class="fas fa-comment"></i>';
+                    case 'like': return '<i class="fas fa-thumbs-up"></i>';
+                    default: return '<i class="fas fa-bell"></i>';
+                }
+            }
+            
+            formatNumber(num) {
+                if (num >= 1000000) {
+                    return (num / 1000000).toFixed(1) + 'M';
+                }
+                if (num >= 1000) {
+                    return (num / 1000).toFixed(1) + 'K';
+                }
+                return num.toString();
+            }
+            
+            formatDate(date) {
+                const now = new Date();
+                const diff = now - date;
+                
+                if (diff < 60000) return 'только что';
+                if (diff < 3600000) return Math.floor(diff / 60000) + ' мин назад';
+                if (diff < 86400000) return Math.floor(diff / 3600000) + ' ч назад';
+                if (diff < 604800000) return Math.floor(diff / 86400000) + ' дн назад';
+                return date.toLocaleDateString('ru-RU');
+            }
+        }
+        
+        // Инициализация студии
+        document.addEventListener('DOMContentLoaded', () => {
+            const studio = new StudioManager();
+            studio.init();
+            
+            // Обработчики периода
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // В реальном приложении здесь бы перезагружалась аналитика
+                });
+            });
+        });
+    </script>
+    
+    <style>
+        .studio-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .studio-header {
+            background: var(--bg-surface);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .studio-header-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .btn-back {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+            text-decoration: none;
+            font-size: 14px;
+            padding: 8px 16px;
+            background: var(--bg-surface-light);
+            border-radius: 20px;
+            width: fit-content;
+        }
+        
+        .studio-header h1 {
+            font-size: 28px;
+            margin: 0;
+        }
+        
+        .studio-channel-info {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .channel-avatar-large {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: var(--purple-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .studio-main {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+        
+        .studio-section {
+            background: var(--bg-surface);
+            border-radius: 12px;
+            padding: 30px;
+        }
+        
+        .studio-section h2 {
+            font-size: 22px;
+            margin-bottom: 20px;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .period-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .period-btn {
+            padding: 8px 16px;
+            background: var(--bg-surface-light);
+            border: 1px solid var(--border-border);
+            border-radius: 20px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        
+        .period-btn.active {
+            background: var(--purple-500);
+            border-color: var(--purple-500);
+        }
+        
+        .activity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .activity-item {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            background: var(--bg-surface-light);
+            border-radius: 8px;
+            border: 1px solid var(--border-border);
+        }
+        
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--purple-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        
+        .activity-content {
+            flex: 1;
+        }
+        
+        .activity-message {
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .activity-time {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        @media (max-width: 768px) {
+            .studio-container {
+                padding: 10px;
+            }
+            
+            .studio-section {
+                padding: 20px;
+            }
+            
+            .section-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+        }
+    </style>
+</body>
+</html>
