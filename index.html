@@ -15,390 +15,786 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js"></script>
     
     <!-- Стили -->
     <link rel="stylesheet" href="style.css">
-    
-    <!-- Конфигурация Firebase -->
-    <script src="firebase-config.js"></script>
 </head>
 <body>
-    <!-- Header -->
-    <header>
-        <div class="header-container">
-            <!-- Logo -->
-            <a href="#" class="logo" id="logo">
-                <div class="logo-icon">
-                    <i class="fas fa-play"></i>
+    <!-- Главный контейнер -->
+    <div id="app">
+        <!-- Навигация -->
+        <nav class="main-nav">
+            <div class="nav-container">
+                <a href="#" class="nav-logo" data-page="home">
+                    <div class="logo-icon">
+                        <i class="fas fa-play"></i>
+                    </div>
+                    <span>Hub<span>Tube</span></span>
+                </a>
+                
+                <div class="nav-search">
+                    <input type="text" placeholder="Поиск видео..." id="searchInput">
+                    <button id="searchBtn"><i class="fas fa-search"></i></button>
                 </div>
-                <span class="logo-text">Hub<span>Tube</span></span>
-            </a>
-            
-            <!-- Тематика -->
-            <div class="themes-container" id="themesContainer">
-                <button class="theme-btn active" data-theme="all">Все</button>
-                <button class="theme-btn" data-theme="videogames">Видеоигры</button>
-                <button class="theme-btn" data-theme="cartoons">Мультфильмы</button>
-            </div>
-            
-            <!-- Search Bar -->
-            <div class="search-container">
-                <input type="text" class="search-input" placeholder="Поиск видео..." id="searchInput">
-                <button class="search-button" id="searchButton">
-                    <i class="fas fa-search"></i>
+                
+                <div class="nav-menu">
+                    <button class="nav-item" data-page="home" title="Главная">
+                        <i class="fas fa-home"></i>
+                        <span>Главная</span>
+                    </button>
+                    
+                    <button class="nav-item" data-page="shorts" title="Shorts">
+                        <i class="fas fa-film"></i>
+                        <span>Shorts</span>
+                    </button>
+                    
+                    <button class="nav-item" data-page="subscriptions" title="Подписки">
+                        <i class="fas fa-users"></i>
+                        <span>Подписки</span>
+                    </button>
+                    
+                    <button class="nav-item" id="uploadBtn" title="Загрузить видео">
+                        <i class="fas fa-upload"></i>
+                        <span>Загрузить</span>
+                    </button>
+                    
+                    <div class="nav-user" id="userMenu">
+                        <button class="nav-item" id="userBtn">
+                            <i class="fas fa-user-circle"></i>
+                            <span id="username">Войти</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                        <div class="user-dropdown" id="userDropdown">
+                            <button class="dropdown-item" data-page="profile">
+                                <i class="fas fa-user"></i> Мой канал
+                            </button>
+                            <button class="dropdown-item" data-page="studio">
+                                <i class="fas fa-tv"></i> Студия
+                            </button>
+                            <button class="dropdown-item" data-page="settings">
+                                <i class="fas fa-cog"></i> Настройки
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button class="dropdown-item" id="logoutBtn">
+                                <i class="fas fa-sign-out-alt"></i> Выйти
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="nav-toggle" id="navToggle">
+                    <i class="fas fa-bars"></i>
                 </button>
             </div>
+        </nav>
+        
+        <!-- Основной контент -->
+        <main id="mainContent">
+            <!-- Домашняя страница -->
+            <div class="page active" id="homePage">
+                <!-- Категории -->
+                <div class="categories">
+                    <button class="category-btn active" data-category="all">Все</button>
+                    <button class="category-btn" data-category="music">Музыка</button>
+                    <button class="category-btn" data-category="gaming">Игры</button>
+                    <button class="category-btn" data-category="education">Образование</button>
+                    <button class="category-btn" data-category="sports">Спорт</button>
+                    <button class="category-btn" data-category="tech">Технологии</button>
+                    <button class="category-btn" data-category="news">Новости</button>
+                    <button class="category-btn" data-category="cartoons">Мультфильмы</button>
+                </div>
+                
+                <!-- Видео сетка -->
+                <div class="video-grid" id="videoGrid">
+                    <!-- Видео загружаются динамически -->
+                </div>
+            </div>
             
-            <!-- Уведомления -->
-            <div class="notifications-container">
-                <button class="btn-icon" id="notificationsBtn">
-                    <i class="fas fa-bell"></i>
-                    <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
-                </button>
-                <div class="notifications-dropdown" id="notificationsDropdown" style="display: none;">
-                    <div class="notifications-header">
-                        <h3>Уведомления</h3>
-                        <button class="btn-text" id="markAllAsRead">Прочитать все</button>
+            <!-- Страница Shorts -->
+            <div class="page" id="shortsPage">
+                <div class="shorts-container">
+                    <h2 class="page-title">Shorts</h2>
+                    <div class="shorts-grid" id="shortsGrid">
+                        <!-- Shorts загружаются динамически -->
                     </div>
-                    <div class="notifications-list" id="notificationsList">
-                        <!-- Уведомления будут здесь -->
+                </div>
+            </div>
+            
+            <!-- Страница подписок -->
+            <div class="page" id="subscriptionsPage">
+                <div class="subscriptions-container">
+                    <h2 class="page-title">Подписки</h2>
+                    <div class="channels-grid" id="channelsGrid">
+                        <!-- Каналы загружаются динамически -->
                     </div>
                 </div>
             </div>
             
-            <!-- User Menu -->
-            <div class="user-menu" id="userMenu">
-                <div class="auth-buttons" id="authButtons">
-                    <button class="btn btn-login" id="loginBtn">
-                        <i class="fas fa-sign-in-alt"></i> Войти
-                    </button>
-                    <button class="btn btn-register" id="registerBtn">
-                        <i class="fas fa-user-plus"></i> Регистрация
-                    </button>
-                </div>
-                
-                <div class="logged-in-buttons" id="loggedInButtons" style="display: none;">
-                    <button class="btn btn-upload" id="uploadBtn">
-                        <i class="fas fa-upload"></i> Загрузить
-                    </button>
-                    <button class="btn-icon" id="studioBtn" title="Студия">
-                        <i class="fas fa-tv"></i>
-                    </button>
-                    <button class="user-button" id="userButton">
-                        <div class="user-avatar" id="userAvatar">U</div>
-                        <span id="username">Пользователь</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </header>
-    
-    <!-- Video Categories -->
-    <div class="categories" id="categories">
-        <button class="category-btn active" data-category="all">Все видео</button>
-        <button class="category-btn" data-category="music">Музыка</button>
-        <button class="category-btn" data-category="gaming">Игры</button>
-        <button class="category-btn" data-category="education">Образование</button>
-        <button class="category-btn" data-category="entertainment">Развлечения</button>
-        <button class="category-btn" data-category="sports">Спорт</button>
-        <button class="category-btn" data-category="tech">Технологии</button>
-        <button class="category-btn" data-category="news">Новости</button>
-        <button class="category-btn" data-category="short">Shorts</button>
-    </div>
-    
-    <!-- Main Content -->
-    <main>
-        <div class="video-grid" id="videoGrid">
-            <!-- Videos will be loaded here -->
-        </div>
-    </main>
-    
-    <!-- Footer -->
-    <footer>
-        <div class="footer-content">
-            <p>© 2026 HubTube - Бесплатный видеохостинг</p>
-            <p>Все права защищены | Реальные данные через Firebase</p>
-        </div>
-    </footer>
-    
-    <!-- Auth Modal -->
-    <div class="modal" id="authModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title" id="authModalTitle">Вход в аккаунт</h2>
-                <button class="close-modal" id="closeAuthModal">&times;</button>
-            </div>
-            
-            <div class="auth-tabs">
-                <button class="auth-tab active" id="loginTab">Вход</button>
-                <button class="auth-tab" id="registerTab">Регистрация</button>
-            </div>
-            
-            <div class="alert" id="authAlert"></div>
-            
-            <!-- Login Form -->
-            <form class="auth-form active" id="loginForm">
-                <div class="form-group">
-                    <label class="form-label" for="loginEmail">Email</label>
-                    <input type="email" class="form-input" id="loginEmail" placeholder="your@email.com" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="loginPassword">Пароль</label>
-                    <input type="password" class="form-input" id="loginPassword" placeholder="Ваш пароль" required>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit">Войти</button>
-                    <button type="button" class="btn-cancel" id="cancelAuth">Отмена</button>
-                </div>
-            </form>
-            
-            <!-- Register Form -->
-            <form class="auth-form" id="registerForm">
-                <div class="form-group">
-                    <label class="form-label" for="registerUsername">Имя пользователя *</label>
-                    <input type="text" class="form-input" id="registerUsername" placeholder="Ваше отображаемое имя" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="registerUniqueName">Уникальное имя (@username) *</label>
-                    <div class="unique-name-input">
-                        <span class="at-symbol">@</span>
-                        <input type="text" class="form-input" id="registerUniqueName" placeholder="username" required>
+            <!-- Страница профиля -->
+            <div class="page" id="profilePage">
+                <div class="profile-container">
+                    <div class="profile-header">
+                        <div class="profile-banner" id="profileBanner"></div>
+                        <div class="profile-info">
+                            <div class="profile-avatar" id="profileAvatar">
+                                <span>U</span>
+                                <button class="edit-avatar" id="editAvatarBtn">
+                                    <i class="fas fa-camera"></i>
+                                </button>
+                            </div>
+                            <div class="profile-details">
+                                <div class="profile-name">
+                                    <h2 id="profileUsername">Имя пользователя</h2>
+                                    <span class="verified-badge" id="profileVerified" style="display: none;">
+                                        <i class="fas fa-check-circle"></i>
+                                    </span>
+                                </div>
+                                <p class="profile-handle" id="profileHandle">@username</p>
+                                <div class="profile-stats">
+                                    <span id="profileSubscribers">0 подписчиков</span>
+                                    <span id="profileVideos">0 видео</span>
+                                </div>
+                                <p class="profile-bio" id="profileBio">Описание канала</p>
+                                <div class="profile-actions">
+                                    <button class="btn btn-primary" id="editProfileBtn">
+                                        <i class="fas fa-edit"></i> Редактировать канал
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
-                        Это имя будет использоваться в вашей ссылке: hubtube.com/@username
-                    </small>
+                    
+                    <div class="profile-tabs">
+                        <button class="profile-tab active" data-tab="videos">Видео</button>
+                        <button class="profile-tab" data-tab="about">О канале</button>
+                        <button class="profile-tab" data-tab="playlists">Плейлисты</button>
+                    </div>
+                    
+                    <div class="profile-content">
+                        <div class="tab-content active" id="videosTab">
+                            <div class="profile-videos" id="profileVideosGrid">
+                                <!-- Видео пользователя -->
+                            </div>
+                        </div>
+                        <div class="tab-content" id="aboutTab">
+                            <div class="about-content">
+                                <h3>Описание</h3>
+                                <p id="profileAbout">Нет описания</p>
+                                
+                                <h3>Детали</h3>
+                                <div class="about-details">
+                                    <p><i class="fas fa-calendar"></i> Присоединился: <span id="profileJoined"></span></p>
+                                    <p><i class="fas fa-eye"></i> Всего просмотров: <span id="profileTotalViews"></span></p>
+                                    <p><i class="fas fa-thumbs-up"></i> Всего лайков: <span id="profileTotalLikes"></span></p>
+                                </div>
+                                
+                                <h3>Ссылки</h3>
+                                <div class="about-links" id="profileLinks">
+                                    <!-- Ссылки пользователя -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-content" id="playlistsTab">
+                            <div class="playlists-content">
+                                <div class="create-playlist">
+                                    <h3>Создать плейлист</h3>
+                                    <div class="playlist-form">
+                                        <input type="text" placeholder="Название плейлиста" id="playlistName">
+                                        <textarea placeholder="Описание" id="playlistDescription"></textarea>
+                                        <button class="btn btn-primary" id="createPlaylistBtn">Создать</button>
+                                    </div>
+                                </div>
+                                <div class="playlists-grid" id="playlistsGrid">
+                                    <!-- Плейлисты пользователя -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Студия -->
+            <div class="page" id="studioPage">
+                <div class="studio-container">
+                    <h1 class="studio-title">Студия HubTube</h1>
+                    
+                    <div class="studio-stats">
+                        <div class="stat-card">
+                            <div class="stat-value" id="studioViews">0</div>
+                            <div class="stat-label">Просмотры</div>
+                            <div class="stat-change positive" id="studioViewsChange">+0%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="studioSubscribers">0</div>
+                            <div class="stat-label">Подписчики</div>
+                            <div class="stat-change positive" id="studioSubscribersChange">+0%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="studioVideos">0</div>
+                            <div class="stat-label">Видео</div>
+                            <div class="stat-change positive" id="studioVideosChange">+0%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="studioLikes">0</div>
+                            <div class="stat-label">Лайки</div>
+                            <div class="stat-change positive" id="studioLikesChange">+0%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="studio-content">
+                        <div class="studio-sidebar">
+                            <button class="studio-nav active" data-studio-tab="dashboard">
+                                <i class="fas fa-chart-line"></i> Аналитика
+                            </button>
+                            <button class="studio-nav" data-studio-tab="videos">
+                                <i class="fas fa-video"></i> Видео
+                            </button>
+                            <button class="studio-nav" data-studio-tab="comments">
+                                <i class="fas fa-comments"></i> Комментарии
+                            </button>
+                            <button class="studio-nav" data-studio-tab="earnings">
+                                <i class="fas fa-dollar-sign"></i> Доход
+                            </button>
+                            <button class="studio-nav" data-studio-tab="settings">
+                                <i class="fas fa-cog"></i> Настройки
+                            </button>
+                        </div>
+                        
+                        <div class="studio-main">
+                            <div class="studio-tab active" id="dashboardTab">
+                                <h2>Аналитика канала</h2>
+                                <div class="analytics-chart">
+                                    <canvas id="viewsChart"></canvas>
+                                </div>
+                                <div class="analytics-grid">
+                                    <div class="analytics-card">
+                                        <h3>Демография</h3>
+                                        <div class="demographics" id="demographicsChart"></div>
+                                    </div>
+                                    <div class="analytics-card">
+                                        <h3>Топ видео</h3>
+                                        <div class="top-videos" id="topVideosList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="studio-tab" id="videosTab">
+                                <div class="videos-header">
+                                    <h2>Управление видео</h2>
+                                    <button class="btn btn-primary" id="uploadStudioBtn">
+                                        <i class="fas fa-upload"></i> Загрузить видео
+                                    </button>
+                                </div>
+                                <div class="videos-grid" id="studioVideosGrid">
+                                    <!-- Видео в студии -->
+                                </div>
+                            </div>
+                            
+                            <div class="studio-tab" id="commentsTab">
+                                <h2>Комментарии</h2>
+                                <div class="comments-filters">
+                                    <button class="filter-btn active">Все</button>
+                                    <button class="filter-btn">Неотвеченные</button>
+                                    <button class="filter-btn">Содержащие вопросы</button>
+                                </div>
+                                <div class="comments-list" id="studioCommentsList">
+                                    <!-- Комментарии в студии -->
+                                </div>
+                            </div>
+                            
+                            <div class="studio-tab" id="earningsTab">
+                                <h2>Доход</h2>
+                                <div class="earnings-stats">
+                                    <div class="earning-card">
+                                        <div class="earning-value">$0</div>
+                                        <div class="earning-label">Общий доход</div>
+                                    </div>
+                                    <div class="earning-card">
+                                        <div class="earning-value">0</div>
+                                        <div class="earning-label">Монетизированных видео</div>
+                                    </div>
+                                    <div class="earning-card">
+                                        <div class="earning-value">0%</div>
+                                        <div class="earning-label">Доля HubTube</div>
+                                    </div>
+                                </div>
+                                <div class="earnings-chart">
+                                    <canvas id="earningsChart"></canvas>
+                                </div>
+                            </div>
+                            
+                            <div class="studio-tab" id="settingsTab">
+                                <h2>Настройки студии</h2>
+                                <div class="settings-form">
+                                    <div class="form-group">
+                                        <label>Категория канала</label>
+                                        <select id="channelCategory">
+                                            <option value="entertainment">Развлечения</option>
+                                            <option value="music">Музыка</option>
+                                            <option value="gaming">Игры</option>
+                                            <option value="education">Образование</option>
+                                            <option value="sports">Спорт</option>
+                                            <option value="tech">Технологии</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Ключевые слова</label>
+                                        <input type="text" id="channelKeywords" placeholder="через запятую">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Страна</label>
+                                        <input type="text" id="channelCountry" placeholder="Россия">
+                                    </div>
+                                    <button class="btn btn-primary" id="saveStudioSettings">Сохранить</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Настройки -->
+            <div class="page" id="settingsPage">
+                <div class="settings-container">
+                    <h1 class="settings-title">Настройки</h1>
+                    
+                    <div class="settings-tabs">
+                        <button class="settings-tab active" data-settings-tab="account">Аккаунт</button>
+                        <button class="settings-tab" data-settings-tab="privacy">Конфиденциальность</button>
+                        <button class="settings-tab" data-settings-tab="notifications">Уведомления</button>
+                        <button class="settings-tab" data-settings-tab="playback">Воспроизведение</button>
+                        <button class="settings-tab" data-settings-tab="advanced">Дополнительно</button>
+                    </div>
+                    
+                    <div class="settings-content">
+                        <div class="settings-section active" id="accountTab">
+                            <h2>Настройки аккаунта</h2>
+                            <div class="form-group">
+                                <label>Имя пользователя</label>
+                                <input type="text" id="settingsUsername" placeholder="Имя пользователя">
+                            </div>
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" id="settingsEmail" placeholder="Email">
+                            </div>
+                            <div class="form-group">
+                                <label>Новый пароль</label>
+                                <input type="password" id="settingsPassword" placeholder="Новый пароль">
+                            </div>
+                            <div class="form-group">
+                                <label>Подтвердите пароль</label>
+                                <input type="password" id="settingsConfirmPassword" placeholder="Подтвердите пароль">
+                            </div>
+                            <button class="btn btn-primary" id="saveAccountSettings">Сохранить</button>
+                        </div>
+                        
+                        <div class="settings-section" id="privacyTab">
+                            <h2>Конфиденциальность</h2>
+                            <div class="privacy-option">
+                                <label>
+                                    <input type="checkbox" id="privateAccount">
+                                    <span>Приватный аккаунт</span>
+                                </label>
+                                <p class="option-description">Только одобренные пользователи смогут видеть ваши видео</p>
+                            </div>
+                            <div class="privacy-option">
+                                <label>
+                                    <input type="checkbox" id="saveWatchHistory">
+                                    <span>Сохранять историю просмотров</span>
+                                </label>
+                                <p class="option-description">Сохранять просмотренные видео для рекомендаций</p>
+                            </div>
+                            <div class="privacy-option">
+                                <label>
+                                    <input type="checkbox" id="showSubscribers">
+                                    <span>Показывать подписчиков</span>
+                                </label>
+                                <p class="option-description">Кто подписан на ваш канал</p>
+                            </div>
+                            <button class="btn btn-primary" id="savePrivacySettings">Сохранить</button>
+                        </div>
+                        
+                        <div class="settings-section" id="notificationsTab">
+                            <h2>Уведомления</h2>
+                            <div class="notification-option">
+                                <label>
+                                    <input type="checkbox" id="notifyNewSubscribers" checked>
+                                    <span>Новые подписчики</span>
+                                </label>
+                            </div>
+                            <div class="notification-option">
+                                <label>
+                                    <input type="checkbox" id="notifyNewComments" checked>
+                                    <span>Новые комментарии</span>
+                                </label>
+                            </div>
+                            <div class="notification-option">
+                                <label>
+                                    <input type="checkbox" id="notifyNewLikes" checked>
+                                    <span>Новые лайки</span>
+                                </label>
+                            </div>
+                            <div class="notification-option">
+                                <label>
+                                    <input type="checkbox" id="notifyAchievements" checked>
+                                    <span>Достижения</span>
+                                </label>
+                            </div>
+                            <button class="btn btn-primary" id="saveNotificationSettings">Сохранить</button>
+                        </div>
+                        
+                        <div class="settings-section" id="playbackTab">
+                            <h2>Настройки воспроизведения</h2>
+                            <div class="playback-option">
+                                <label>
+                                    <input type="checkbox" id="autoplay" checked>
+                                    <span>Автовоспроизведение следующего видео</span>
+                                </label>
+                            </div>
+                            <div class="playback-option">
+                                <label>
+                                    <input type="checkbox" id="annotations" checked>
+                                    <span>Показывать аннотации</span>
+                                </label>
+                            </div>
+                            <div class="playback-option">
+                                <label>Качество видео по умолчанию</label>
+                                <select id="defaultQuality">
+                                    <option value="auto">Авто</option>
+                                    <option value="144p">144p</option>
+                                    <option value="360p">360p</option>
+                                    <option value="720p">720p</option>
+                                    <option value="1080p">1080p</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" id="savePlaybackSettings">Сохранить</button>
+                        </div>
+                        
+                        <div class="settings-section" id="advancedTab">
+                            <h2>Дополнительные настройки</h2>
+                            <div class="advanced-option">
+                                <label>Язык</label>
+                                <select id="language">
+                                    <option value="ru">Русский</option>
+                                    <option value="en">English</option>
+                                </select>
+                            </div>
+                            <div class="advanced-option">
+                                <label>Регион</label>
+                                <select id="region">
+                                    <option value="RU">Россия</option>
+                                    <option value="US">США</option>
+                                    <option value="EU">Европа</option>
+                                </select>
+                            </div>
+                            <div class="advanced-option">
+                                <label>Тема</label>
+                                <div class="theme-selector">
+                                    <button class="theme-option dark active" data-theme="dark">
+                                        <i class="fas fa-moon"></i> Темная
+                                    </button>
+                                    <button class="theme-option light" data-theme="light">
+                                        <i class="fas fa-sun"></i> Светлая
+                                    </button>
+                                    <button class="theme-option auto" data-theme="auto">
+                                        <i class="fas fa-adjust"></i> Авто
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="danger-zone">
+                                <h3>Опасная зона</h3>
+                                <button class="btn btn-danger" id="deleteAccountBtn">
+                                    <i class="fas fa-trash"></i> Удалить аккаунт
+                                </button>
+                                <p class="danger-warning">Это действие нельзя отменить</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Модальные окна -->
+        
+        <!-- Модалка авторизации -->
+        <div class="modal" id="authModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Вход / Регистрация</h2>
+                    <button class="close-modal">&times;</button>
                 </div>
                 
-                <div class="form-group">
-                    <label class="form-label" for="registerEmail">Email *</label>
-                    <input type="email" class="form-input" id="registerEmail" placeholder="your@email.com" required>
+                <div class="auth-tabs">
+                    <button class="auth-tab active" data-auth-tab="login">Вход</button>
+                    <button class="auth-tab" data-auth-tab="register">Регистрация</button>
                 </div>
                 
-                <div class="form-group">
-                    <label class="form-label" for="registerPassword">Пароль *</label>
-                    <input type="password" class="form-input" id="registerPassword" placeholder="Не менее 6 символов" required>
+                <div class="auth-content">
+                    <form class="auth-form active" id="loginForm">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="loginEmail" placeholder="your@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль</label>
+                            <input type="password" id="loginPassword" placeholder="Пароль" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Войти</button>
+                    </form>
+                    
+                    <form class="auth-form" id="registerForm">
+                        <div class="form-group">
+                            <label>Имя пользователя</label>
+                            <input type="text" id="registerUsername" placeholder="Имя пользователя" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Уникальное имя</label>
+                            <div class="unique-input">
+                                <span class="prefix">@</span>
+                                <input type="text" id="registerHandle" placeholder="username" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="registerEmail" placeholder="your@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Пароль</label>
+                            <input type="password" id="registerPassword" placeholder="Пароль" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Подтвердите пароль</label>
+                            <input type="password" id="registerConfirmPassword" placeholder="Подтвердите пароль" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Зарегистрироваться</button>
+                    </form>
                 </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="registerConfirmPassword">Подтвердите пароль *</label>
-                    <input type="password" class="form-input" id="registerConfirmPassword" placeholder="Повторите пароль" required>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit">Зарегистрироваться</button>
-                    <button type="button" class="btn-cancel" id="cancelRegister">Отмена</button>
-                </div>
-            </form>
+            </div>
         </div>
-    </div>
-    
-    <!-- Upload Video Modal -->
-    <div class="modal" id="uploadModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Загрузить видео</h2>
-                <button class="close-modal" id="closeUploadModal">&times;</button>
+        
+        <!-- Модалка загрузки видео -->
+        <div class="modal" id="uploadModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Загрузить видео</h2>
+                    <button class="close-modal">&times;</button>
+                </div>
+                
+                <form id="uploadForm">
+                    <div class="form-group">
+                        <label>Название видео</label>
+                        <input type="text" id="videoTitle" placeholder="Название видео" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Описание</label>
+                        <textarea id="videoDescription" placeholder="Описание видео" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Тип видео</label>
+                            <select id="videoType">
+                                <option value="video">Обычное видео</option>
+                                <option value="short">Short (вертикальное)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Категория</label>
+                            <select id="videoCategory">
+                                <option value="entertainment">Развлечения</option>
+                                <option value="music">Музыка</option>
+                                <option value="gaming">Игры</option>
+                                <option value="education">Образование</option>
+                                <option value="sports">Спорт</option>
+                                <option value="tech">Технологии</option>
+                                <option value="news">Новости</option>
+                                <option value="cartoons">Мультфильмы</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Ссылка на видео</label>
+                        <input type="url" id="videoUrl" placeholder="https://example.com/video.mp4" required>
+                        <small>Поддерживаются: YouTube, Vimeo, прямые ссылки на видео</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Ссылка на обложку</label>
+                        <input type="url" id="thumbnailUrl" placeholder="https://example.com/thumbnail.jpg">
+                        <small>Оставьте пустым для автоматической обложки</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Теги (через запятую)</label>
+                        <input type="text" id="videoTags" placeholder="видео, развлечения, музыка">
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary close-modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-upload"></i> Загрузить видео
+                        </button>
+                    </div>
+                </form>
             </div>
-            
-            <div class="alert" id="uploadAlert"></div>
-            
-            <form id="uploadForm">
-                <div class="form-group">
-                    <label class="form-label" for="videoTitle">Название видео *</label>
-                    <input type="text" class="form-input" id="videoTitle" placeholder="Креативное название" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="videoDescription">Описание</label>
-                    <textarea class="form-textarea" id="videoDescription" placeholder="Расскажите о вашем видео..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="videoType">Тип видео *</label>
-                    <select class="form-select" id="videoType" required>
-                        <option value="regular">Обычное видео</option>
-                        <option value="short">Shorts (вертикальное)</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="videoUrl">Ссылка на видео *</label>
-                    <input type="url" class="form-input" id="videoUrl" placeholder="https://example.com/video.mp4" required>
-                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
-                        Поддерживаются прямые ссылки на MP4, WebM, YouTube, Vimeo
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="thumbnailUrl">Ссылка на обложку</label>
-                    <input type="url" class="form-input" id="thumbnailUrl" placeholder="https://example.com/image.jpg">
-                    <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
-                        Рекомендуемый размер: 1280x720px (для обычных видео) или 1080x1920px (для Shorts)
-                    </small>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="videoCategory">Категория</label>
-                    <select class="form-select" id="videoCategory">
-                        <option value="entertainment">Развлечения</option>
-                        <option value="music">Музыка</option>
-                        <option value="gaming">Игры</option>
-                        <option value="education">Образование</option>
-                        <option value="sports">Спорт</option>
-                        <option value="tech">Технологии</option>
-                        <option value="news">Новости</option>
-                        <option value="videogames">Видеоигры</option>
-                        <option value="cartoons">Мультфильмы</option>
-                        <option value="short">Shorts</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="videoTags">Теги (через запятую)</label>
-                    <input type="text" class="form-input" id="videoTags" placeholder="видео, природа, путешествие">
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit">
-                        <i class="fas fa-upload"></i> Опубликовать видео
-                    </button>
-                    <button type="button" class="btn-cancel" id="cancelUpload">Отмена</button>
-                </div>
-            </form>
         </div>
-    </div>
-    
-    <!-- Video Player Modal -->
-    <div class="modal" id="videoPlayerModal">
-        <div class="modal-content video-player-modal">
-            <div class="modal-header">
-                <h2 class="modal-title" id="playerTitle">Просмотр видео</h2>
-                <button class="close-modal" id="closePlayerModal">&times;</button>
-            </div>
-            
-            <div class="video-player-container" id="videoPlayerContainer">
-                <!-- Video player will be inserted here -->
-            </div>
-            
-            <div class="video-info">
-                <div class="video-header">
-                    <h3 id="playerVideoTitle"></h3>
+        
+        <!-- Модалка просмотра видео -->
+        <div class="modal" id="videoModal">
+            <div class="modal-content video-modal">
+                <div class="modal-header">
+                    <h2 id="videoModalTitle"></h2>
+                    <button class="close-modal">&times;</button>
+                </div>
+                
+                <div class="video-player" id="videoPlayer">
+                    <!-- Плеер загружается динамически -->
+                </div>
+                
+                <div class="video-info">
+                    <div class="video-header">
+                        <div class="channel-info">
+                            <div class="channel-avatar" id="videoChannelAvatar"></div>
+                            <div>
+                                <div class="channel-name">
+                                    <span id="videoChannelName"></span>
+                                    <span class="verified-badge" id="videoChannelVerified" style="display: none;">
+                                        <i class="fas fa-check-circle"></i>
+                                    </span>
+                                </div>
+                                <div class="channel-subscribers" id="videoChannelSubscribers"></div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" id="subscribeVideoBtn">Подписаться</button>
+                    </div>
+                    
+                    <div class="video-stats">
+                        <div class="views" id="videoViews">0 просмотров</div>
+                        <div class="date" id="videoDate"></div>
+                    </div>
+                    
                     <div class="video-actions">
-                        <button class="btn-like" id="likeBtn">
+                        <button class="video-action" id="likeVideoBtn">
                             <i class="fas fa-thumbs-up"></i>
                             <span id="likeCount">0</span>
                         </button>
-                        <button class="btn-subscribe" id="subscribeBtn">
-                            <i class="fas fa-user-plus"></i> Подписаться
+                        <button class="video-action" id="dislikeVideoBtn">
+                            <i class="fas fa-thumbs-down"></i>
+                        </button>
+                        <button class="video-action" id="shareVideoBtn">
+                            <i class="fas fa-share"></i> Поделиться
+                        </button>
+                        <button class="video-action" id="saveVideoBtn">
+                            <i class="fas fa-bookmark"></i> Сохранить
                         </button>
                     </div>
-                </div>
-                <div class="channel-info">
-                    <div class="channel-avatar" id="playerChannelAvatar"></div>
-                    <div>
-                        <div class="channel-name">
-                            <span id="playerChannelName"></span>
-                            <span class="verified-badge" id="playerVerifiedBadge" style="display: none;">
-                                <i class="fas fa-check-circle"></i>
-                            </span>
-                        </div>
-                        <div id="playerSubscribers"></div>
-                    </div>
-                </div>
-                <div class="video-stats">
-                    <span id="playerVideoViews"></span>
-                    <span>•</span>
-                    <span id="playerVideoDate"></span>
-                </div>
-                <p id="playerVideoDescription"></p>
-                
-                <!-- Комментарии -->
-                <div class="comments-section">
-                    <h3>Комментарии (<span id="commentsCount">0</span>)</h3>
                     
-                    <!-- Закрепленный комментарий -->
-                    <div class="pinned-comment" id="pinnedComment" style="display: none;">
-                        <div class="comment-header">
-                            <span class="comment-author">
-                                <i class="fas fa-thumbtack"></i> Закреплено автором
-                            </span>
-                            <div class="comment-actions">
-                                <button class="btn-icon heart-comment" title="Сердечко от автора">
-                                    <i class="fas fa-heart"></i>
-                                </button>
+                    <div class="video-description" id="videoModalDescription"></div>
+                    
+                    <!-- Комментарии -->
+                    <div class="comments-section">
+                        <h3>Комментарии (<span id="commentsCount">0</span>)</h3>
+                        
+                        <!-- Форма комментария -->
+                        <div class="comment-form" id="commentForm">
+                            <div class="user-avatar" id="commentUserAvatar">U</div>
+                            <div class="comment-input-container">
+                                <input type="text" id="commentInput" placeholder="Добавьте комментарий...">
+                                <button id="submitCommentBtn">Отправить</button>
                             </div>
                         </div>
-                        <div class="comment-content" id="pinnedCommentContent"></div>
-                    </div>
-                    
-                    <!-- Форма комментария -->
-                    <div class="comment-form" id="commentForm">
-                        <div class="user-avatar-small" id="commentUserAvatar">U</div>
-                        <div class="comment-input-container">
-                            <input type="text" class="comment-input" id="commentInput" placeholder="Добавьте комментарий...">
-                            <button class="btn-submit-comment" id="submitComment">Отправить</button>
+                        
+                        <!-- Список комментариев -->
+                        <div class="comments-list" id="commentsList">
+                            <!-- Комментарии загружаются динамически -->
                         </div>
                     </div>
-                    
-                    <!-- Список комментариев -->
-                    <div class="comments-list" id="commentsList">
-                        <!-- Комментарии загружаются здесь -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Модалка редактирования профиля -->
+        <div class="modal" id="editProfileModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Редактировать профиль</h2>
+                    <button class="close-modal">&times;</button>
+                </div>
+                
+                <form id="editProfileForm">
+                    <div class="form-group">
+                        <label>Имя пользователя</label>
+                        <input type="text" id="editUsername" placeholder="Имя пользователя" required>
                     </div>
+                    
+                    <div class="form-group">
+                        <label>Описание канала</label>
+                        <textarea id="editBio" placeholder="Расскажите о вашем канале..." rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Ссылка на аватар</label>
+                        <input type="url" id="editAvatarUrl" placeholder="https://example.com/avatar.jpg">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Ссылка на баннер</label>
+                        <input type="url" id="editBannerUrl" placeholder="https://example.com/banner.jpg">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Ссылки на соцсети (по одной в строке)</label>
+                        <textarea id="editLinks" placeholder="https://example.com\nhttps://example2.com" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary close-modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Модалка уведомлений -->
+        <div class="modal" id="notificationsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Уведомления</h2>
+                    <button class="close-modal">&times;</button>
+                </div>
+                
+                <div class="notifications-list" id="notificationsList">
+                    <!-- Уведомления загружаются динамически -->
                 </div>
             </div>
         </div>
+        
+        <!-- Уведомления (тосты) -->
+        <div class="toast-container" id="toastContainer"></div>
     </div>
-    
-    <!-- Edit Profile Modal -->
-    <div class="modal" id="editProfileModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title">Редактирование профиля</h2>
-                <button class="close-modal" id="closeEditProfileModal">&times;</button>
-            </div>
-            
-            <div class="alert" id="editProfileAlert"></div>
-            
-            <form id="editProfileForm">
-                <div class="form-group">
-                    <label class="form-label" for="editUsername">Имя канала *</label>
-                    <input type="text" class="form-input" id="editUsername" placeholder="Имя вашего канала" required>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="editBio">Описание канала</label>
-                    <textarea class="form-textarea" id="editBio" placeholder="Расскажите о вашем канале..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="editAvatarUrl">Ссылка на аватар</label>
-                    <input type="url" class="form-input" id="editAvatarUrl" placeholder="https://example.com/avatar.jpg">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="editBannerUrl">Ссылка на баннер канала</label>
-                    <input type="url" class="form-input" id="editBannerUrl" placeholder="https://example.com/banner.jpg">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label" for="editLinks">Ссылки (каждая с новой строки)</label>
-                    <textarea class="form-textarea" id="editLinks" placeholder="https://example.com"></textarea>
-                </div>
-                
-                <div class="form-actions">
-                    <button type="submit" class="btn-submit">Сохранить изменения</button>
-                    <button type="button" class="btn-cancel" id="cancelEditProfile">Отмена</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
-    <!-- JavaScript -->
+
+    <!-- Конфигурация Firebase (внутри HTML) -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD5gAry2Nq_2QwJh2qQ8Q9wQ8wQ8wQ8wQ8w",
+            authDomain: "hubtube-2026.firebaseapp.com",
+            projectId: "hubtube-2026",
+            storageBucket: "hubtube-2026.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef1234567890abcdef"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+    </script>
+
+    <!-- Основной скрипт -->
     <script src="script.js"></script>
 </body>
 </html>
