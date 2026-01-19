@@ -1,1221 +1,1269 @@
-// ==============================================
-// УПРАВЛЕНИЕ ДАННЫМИ ЧЕРЕЗ FIREBASE
-// ==============================================
-
-class FirebaseManager {
-    // ... предыдущий код ...
-
-    // Комментарии
-    async addComment(videoId, text, parentId = null) {
-        try {
-            const user = this.auth.currentUser;
-            if (!user) {
-                return { success: false, error: 'Пользователь не авторизован' };
-            }
-            
-            const userData = await this.getUserData(user.uid);
-            if (!userData.success) {
-                return userData;
-            }
-            
-            // Обработка форматирования *жирный текст*
-            const formattedText = this.formatCommentText(text);
-            
-            const commentData = {
-                videoId: videoId,
-                userId: user.uid,
-                username: userData.data.username,
-                avatarColor: userData.data.avatarColor,
-                text: formattedText,
-                originalText: text,
-                likes: 0,
-                likedBy: [],
-                replies: 0,
-                isPinned: false,
-                isHearted: false,
-                parentId: parentId,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            
-            const docRef = await this.db.collection('comments').add(commentData);
-            
-            // Увеличиваем счетчик комментариев
-            if (!parentId) {
-                await this.db.collection('videos').doc(videoId).update({
-                    comments: firebase.firestore.FieldValue.increment(1)
-                });
-            } else {
-                // Увеличиваем счетчик ответов у родительского комментария
-                await this.db.collection('comments').doc(parentId).update({
-                    replies: firebase.firestore.FieldValue.increment(1)
-                });
-            }
-            
-            return { success: true, commentId: docRef.id };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async getComments(videoId, limit = 50) {
-        try {
-            const snapshot = await this.db.collection('comments')
-                .where('videoId', '==', videoId)
-                .where('parentId', '==', null)
-                .orderBy('createdAt', 'desc')
-                .limit(limit)
-                .get();
-            
-            const comments = [];
-            snapshot.forEach(doc => {
-                comments.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-            
-            return { success: true, comments };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async getReplies(commentId) {
-        try {
-            const snapshot = await this.db.collection('comments')
-                .where('parentId', '==', commentId)
-                .orderBy('createdAt', 'asc')
-                .get();
-            
-            const replies = [];
-            snapshot.forEach(doc => {
-                replies.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-            
-            return { success: true, replies };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async toggleLikeComment(commentId, userId) {
-        try {
-            const commentRef = this.db.collection('comments').doc(commentId);
-            const commentDoc = await commentRef.get();
-            
-            if (!commentDoc.exists) {
-                return { success: false, error: 'Комментарий не найден' };
-            }
-            
-            const commentData = commentDoc.data();
-            const likedBy = commentData.likedBy || [];
-            const hasLiked = likedBy.includes(userId);
-            
-            if (hasLiked) {
-                // Убираем лайк
-                await commentRef.update({
-                    likes: firebase.firestore.FieldValue.increment(-1),
-                    likedBy: firebase.firestore.FieldValue.arrayRemove(userId)
-                });
-                return { success: true, liked: false };
-            } else {
-                // Добавляем лайк
-                await commentRef.update({
-                    likes: firebase.firestore.FieldValue.increment(1),
-                    likedBy: firebase.firestore.FieldValue.arrayRemove(userId)
-                });
-                return { success: true, liked: true };
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async togglePinComment(commentId, videoId, userId) {
-        try {
-            // Проверяем, является ли пользователь владельцем видео
-            const videoDoc = await this.db.collection('videos').doc(videoId).get();
-            if (!videoDoc.exists) {
-                return { success: false, error: 'Видео не найдено' };
-            }
-            
-            const videoData = videoDoc.data();
-            if (videoData.userId !== userId) {
-                return { success: false, error: 'Только автор видео может закреплять комментарии' };
-            }
-            
-            const commentRef = this.db.collection('comments').doc(commentId);
-            const commentDoc = await commentRef.get();
-            
-            if (!commentDoc.exists) {
-                return { success: false, error: 'Комментарий не найден' };
-            }
-            
-            const commentData = commentDoc.data();
-            const isCurrentlyPinned = commentData.isPinned;
-            
-            if (isCurrentlyPinned) {
-                // Открепляем комментарий
-                await commentRef.update({
-                    isPinned: false
-                });
-                return { success: true, pinned: false };
-            } else {
-                // Открепляем все другие закрепленные комментарии
-                const pinnedComments = await this.db.collection('comments')
-                    .where('videoId', '==', videoId)
-                    .where('isPinned', '==', true)
-                    .get();
-                
-                const batch = this.db.batch();
-                pinnedComments.forEach(doc => {
-                    batch.update(doc.ref, { isPinned: false });
-                });
-                await batch.commit();
-                
-                // Закрепляем текущий комментарий
-                await commentRef.update({
-                    isPinned: true
-                });
-                
-                return { success: true, pinned: true };
-            }
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async toggleHeartComment(commentId, videoId, userId) {
-        try {
-            // Проверяем, является ли пользователь владельцем видео
-            const videoDoc = await this.db.collection('videos').doc(videoId).get();
-            if (!videoDoc.exists) {
-                return { success: false, error: 'Видео не найдено' };
-            }
-            
-            const videoData = videoDoc.data();
-            if (videoData.userId !== userId) {
-                return { success: false, error: 'Только автор видео может ставить сердечки' };
-            }
-            
-            const commentRef = this.db.collection('comments').doc(commentId);
-            const commentDoc = await commentRef.get();
-            
-            if (!commentDoc.exists) {
-                return { success: false, error: 'Комментарий не найден' };
-            }
-            
-            const commentData = commentDoc.data();
-            const isCurrentlyHearted = commentData.isHearted;
-            
-            await commentRef.update({
-                isHearted: !isCurrentlyHearted
-            });
-            
-            return { success: true, hearted: !isCurrentlyHearted };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    // Уведомления
-    async createNotification(userId, type, data) {
-        try {
-            const notificationData = {
-                userId: userId,
-                type: type,
-                data: data,
-                read: false,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            
-            await this.db.collection('notifications').add(notificationData);
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async getNotifications(userId, limit = 20) {
-        try {
-            const snapshot = await this.db.collection('notifications')
-                .where('userId', '==', userId)
-                .orderBy('createdAt', 'desc')
-                .limit(limit)
-                .get();
-            
-            const notifications = [];
-            snapshot.forEach(doc => {
-                notifications.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-            
-            return { success: true, notifications };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async markNotificationAsRead(notificationId) {
-        try {
-            await this.db.collection('notifications').doc(notificationId).update({
-                read: true
-            });
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async markAllNotificationsAsRead(userId) {
-        try {
-            const snapshot = await this.db.collection('notifications')
-                .where('userId', '==', userId)
-                .where('read', '==', false)
-                .get();
-            
-            const batch = this.db.batch();
-            snapshot.forEach(doc => {
-                batch.update(doc.ref, { read: true });
-            });
-            
-            await batch.commit();
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    // Редактирование профиля
-    async updateUserProfile(userId, data) {
-        try {
-            await this.db.collection('users').doc(userId).update({
-                ...data,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            
-            return { success: true };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    // Аналитика для студии
-    async getChannelAnalytics(userId, period = 'week') {
-        try {
-            const now = new Date();
-            let startDate;
-            
-            switch (period) {
-                case 'day':
-                    startDate = new Date(now.setDate(now.getDate() - 1));
-                    break;
-                case 'week':
-                    startDate = new Date(now.setDate(now.getDate() - 7));
-                    break;
-                case 'month':
-                    startDate = new Date(now.setMonth(now.getMonth() - 1));
-                    break;
-                default:
-                    startDate = new Date(now.setDate(now.getDate() - 7));
-            }
-            
-            // Получаем видео пользователя за период
-            const videosSnapshot = await this.db.collection('videos')
-                .where('userId', '==', userId)
-                .where('createdAt', '>=', startDate)
-                .get();
-            
-            let totalViews = 0;
-            let totalLikes = 0;
-            let totalComments = 0;
-            let videosCount = 0;
-            
-            videosSnapshot.forEach(doc => {
-                const video = doc.data();
-                totalViews += video.views || 0;
-                totalLikes += video.likes || 0;
-                totalComments += video.comments || 0;
-                videosCount++;
-            });
-            
-            // Получаем статистику подписчиков
-            const userDoc = await this.db.collection('users').doc(userId).get();
-            const userData = userDoc.data();
-            const subscribers = userData.subscribers || 0;
-            
-            return {
-                success: true,
-                analytics: {
-                    views: totalViews,
-                    likes: totalLikes,
-                    comments: totalComments,
-                    videos: videosCount,
-                    subscribers: subscribers,
-                    period: period
-                }
-            };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    async getUserVideos(userId, limit = 20) {
-        try {
-            const snapshot = await this.db.collection('videos')
-                .where('userId', '==', userId)
-                .orderBy('createdAt', 'desc')
-                .limit(limit)
-                .get();
-            
-            const videos = [];
-            snapshot.forEach(doc => {
-                videos.push({
-                    id: doc.id,
-                    ...doc.data()
-                });
-            });
-            
-            return { success: true, videos };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-    
-    // Форматирование текста комментария
-    formatCommentText(text) {
-        // Заменяем *текст* на <strong>текст</strong>
-        return text.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
-    }
-    
-    // Проверка достижений
-    async checkAchievements(userId) {
-        try {
-            const userDoc = await this.db.collection('users').doc(userId).get();
-            if (!userDoc.exists) {
-                return { success: false, error: 'Пользователь не найден' };
-            }
-            
-            const userData = userDoc.data();
-            const subscribers = userData.subscribers || 0;
-            const lastAchievementCheck = userData.lastAchievementCheck || 0;
-            
-            const achievements = [];
-            
-            // Проверяем достижения по подписчикам
-            if (subscribers >= 10 && (lastAchievementCheck < 10 || !lastAchievementCheck)) {
-                achievements.push({
-                    type: 'subscribers',
-                    count: 10,
-                    message: '🎉 Вы набрали 10 подписчиков!'
-                });
-            }
-            
-            if (subscribers >= 50 && (lastAchievementCheck < 50 || !lastAchievementCheck)) {
-                achievements.push({
-                    type: 'subscribers',
-                    count: 50,
-                    message: '🎉 Вы набрали 50 подписчиков!'
-                });
-            }
-            
-            if (subscribers >= 100 && (lastAchievementCheck < 100 || !lastAchievementCheck)) {
-                achievements.push({
-                    type: 'subscribers',
-                    count: 100,
-                    message: '🎉 Вы набрали 100 подписчиков! Вы получили галочку от HubTube!'
-                });
-            }
-            
-            // Обновляем последнюю проверку достижений
-            if (achievements.length > 0) {
-                const maxAchievement = Math.max(...achievements.map(a => a.count));
-                await this.db.collection('users').doc(userId).update({
-                    lastAchievementCheck: maxAchievement
-                });
-            }
-            
-            return { success: true, achievements };
-        } catch (error) {
-            return { success: false, error: error.message };
-        }
-    }
-}
-
-// ==============================================
-// ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ
-// ==============================================
-
-// Инициализация Firebase менеджера
-const firebaseManager = new FirebaseManager();
-
-// DOM элементы
-const videoGrid = document.getElementById('videoGrid');
-const searchInput = document.getElementById('searchInput');
-const searchButton = document.getElementById('searchButton');
-const authButtons = document.getElementById('authButtons');
-const loggedInButtons = document.getElementById('loggedInButtons');
-const userButton = document.getElementById('userButton');
-const userAvatar = document.getElementById('userAvatar');
-const username = document.getElementById('username');
-const uploadBtn = document.getElementById('uploadBtn');
-const loginBtn = document.getElementById('loginBtn');
-const registerBtn = document.getElementById('registerBtn');
-const categories = document.getElementById('categories');
-const themesContainer = document.getElementById('themesContainer');
-const studioBtn = document.getElementById('studioBtn');
-
-// Уведомления
-const notificationsBtn = document.getElementById('notificationsBtn');
-const notificationsDropdown = document.getElementById('notificationsDropdown');
-const notificationsList = document.getElementById('notificationsList');
-const notificationBadge = document.getElementById('notificationBadge');
-const markAllAsReadBtn = document.getElementById('markAllAsRead');
-
-// Модальные окна
-const authModal = document.getElementById('authModal');
-const uploadModal = document.getElementById('uploadModal');
-const videoPlayerModal = document.getElementById('videoPlayerModal');
-const editProfileModal = document.getElementById('editProfileModal');
-
-// Формы
-const loginForm = document.getElementById('loginForm');
-const registerForm = document.getElementById('registerForm');
-const uploadForm = document.getElementById('uploadForm');
-const editProfileForm = document.getElementById('editProfileForm');
-
-// Комментарии
-const commentInput = document.getElementById('commentInput');
-const submitComment = document.getElementById('submitComment');
-const commentsList = document.getElementById('commentsList');
-const commentsCount = document.getElementById('commentsCount');
-
-// Лайки
-const likeBtn = document.getElementById('likeBtn');
-const likeCount = document.getElementById('likeCount');
-
-// Текущий пользователь и состояние
+// Глобальные переменные
 let currentUser = null;
 let currentUserData = null;
-let currentCategory = 'all';
 let currentVideo = null;
-let currentTheme = 'all';
-let isSubscribed = false;
-let isLiked = false;
-let currentComments = [];
-let unreadNotifications = 0;
+let videos = [];
+let subscriptions = [];
+let notifications = [];
 
-// ==============================================
-// ФУНКЦИИ РЕНДЕРИНГА
-// ==============================================
+// Инициализация приложения
+document.addEventListener('DOMContentLoaded', () => {
+    initFirebase();
+    initEventListeners();
+    checkAuthState();
+    loadVideos();
+    updateUI();
+});
 
-// Рендеринг видео
-async function renderVideos(videos = []) {
-    videoGrid.innerHTML = '';
-    
-    if (videos.length === 0) {
-        videoGrid.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-video-slash"></i>
-                <h3>Видео не найдены</h3>
-                <p>Будьте первым, кто загрузит видео на HubTube!</p>
-                ${currentUser ? 
-                    `<button class="btn btn-upload" style="margin-top: 20px;" onclick="showUploadModal()">
-                        <i class="fas fa-upload"></i> Загрузить видео
-                    </button>` : 
-                    ''
-                }
-            </div>
-        `;
-        return;
-    }
-    
-    for (const video of videos) {
-        // Фильтрация по теме
-        if (currentTheme !== 'all' && video.theme !== currentTheme) {
-            continue;
-        }
-        
-        const videoCard = document.createElement('div');
-        videoCard.className = `video-card fade-in ${video.type === 'short' ? 'short' : ''}`;
-        
-        const videoDate = video.createdAt ? formatDate(video.createdAt.toDate()) : 'Недавно';
-        const isShort = video.type === 'short';
-        
-        videoCard.innerHTML = `
-            <div class="thumbnail">
-                <img src="${video.thumbnail || firebaseManager.getDefaultThumbnail(video.category)}" 
-                     alt="${video.title}"
-                     onerror="this.src='https://images.unsplash.com/photo-1536240478700-b869070f9279?w=1280&h=720&fit=crop'">
-                <div class="video-duration">${video.duration}</div>
-                ${isShort ? '<div class="short-badge">SHORTS</div>' : ''}
-                <div class="play-button">
-                    <i class="fas fa-play" style="font-size: 24px;"></i>
-                </div>
-            </div>
-            <div class="video-info">
-                <h3 class="video-title">${video.title}</h3>
-                <p class="video-description">${video.description || 'Нет описания'}</p>
-                <div class="channel-info">
-                    <div class="channel-avatar" style="background: ${video.avatarColor}">
-                        ${video.username ? video.username.charAt(0).toUpperCase() : 'U'}
-                    </div>
-                    <div>
-                        <div class="channel-name">
-                            <span>${video.username || 'Неизвестный автор'}</span>
-                            ${video.isVerified ? '<span class="verified-badge"><i class="fas fa-check-circle"></i></span>' : ''}
-                        </div>
-                        <div>${formatViews(video.views)} просмотров • ${videoDate}</div>
-                    </div>
-                </div>
-                <div class="video-meta">
-                    <span><i class="fas fa-tag"></i> ${getCategoryName(video.category)}</span>
-                    <span><i class="fas fa-thumbs-up"></i> ${video.likes}</span>
-                    ${video.comments ? `<span><i class="fas fa-comment"></i> ${video.comments}</span>` : ''}
-                </div>
-            </div>
-        `;
-        
-        videoCard.addEventListener('click', () => {
-            playVideo(video);
-        });
-        
-        videoGrid.appendChild(videoCard);
-    }
+// Инициализация Firebase
+function initFirebase() {
+    // Firebase уже инициализирован в HTML
+    console.log('Firebase инициализирован');
 }
 
-// Рендеринг комментариев
-function renderComments(comments) {
-    commentsList.innerHTML = '';
-    currentComments = comments;
-    
-    if (comments.length === 0) {
-        commentsList.innerHTML = `
-            <div class="empty-state" style="padding: 20px 0;">
-                <p>Пока нет комментариев. Будьте первым!</p>
-            </div>
-        `;
-        return;
-    }
-    
-    // Находим закрепленный комментарий
-    const pinnedComment = comments.find(c => c.isPinned);
-    if (pinnedComment) {
-        const pinnedElement = createCommentElement(pinnedComment, true);
-        document.getElementById('pinnedComment').style.display = 'block';
-        document.getElementById('pinnedCommentContent').innerHTML = `
-            <div class="comment-author-name">${pinnedComment.username}</div>
-            <div class="comment-text">${pinnedComment.text}</div>
-            ${pinnedComment.isHearted ? '<div class="heart-comment"><i class="fas fa-heart"></i> Сердечко от автора</div>' : ''}
-        `;
-    }
-    
-    // Рендерим остальные комментарии
-    const otherComments = comments.filter(c => !c.isPinned);
-    otherComments.forEach(comment => {
-        const commentElement = createCommentElement(comment, false);
-        commentsList.appendChild(commentElement);
-        
-        // Загружаем ответы на комментарии
-        loadReplies(comment.id, commentElement);
+// Проверка состояния авторизации
+function checkAuthState() {
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUser = user;
+            await loadUserData(user.uid);
+            await loadSubscriptions();
+            await loadNotifications();
+            showToast('Вы успешно вошли!', 'success');
+        } else {
+            currentUser = null;
+            currentUserData = null;
+        }
+        updateUI();
     });
 }
 
-function createCommentElement(comment, isPinned = false) {
-    const commentElement = document.createElement('div');
-    commentElement.className = `comment-item ${isPinned ? 'pinned' : ''}`;
-    commentElement.dataset.commentId = comment.id;
-    
-    const commentDate = comment.createdAt ? formatDate(comment.createdAt.toDate()) : 'только что';
-    
-    commentElement.innerHTML = `
-        <div class="comment-avatar" style="background: ${comment.avatarColor}">
-            ${comment.username ? comment.username.charAt(0).toUpperCase() : 'U'}
-        </div>
-        <div class="comment-body">
-            <div class="comment-meta">
-                <span class="comment-author-name">${comment.username}</span>
-                <span class="comment-time">${commentDate}</span>
-            </div>
-            <div class="comment-text">${comment.text}</div>
-            <div class="comment-actions">
-                <button class="comment-action-btn like-comment ${comment.likedBy && comment.likedBy.includes(currentUser?.uid) ? 'liked' : ''}" 
-                        data-comment-id="${comment.id}">
-                    <i class="fas fa-thumbs-up"></i>
-                    <span class="like-count">${comment.likes || 0}</span>
-                </button>
-                <button class="comment-action-btn reply-comment" data-comment-id="${comment.id}">
-                    <i class="fas fa-reply"></i> Ответить
-                </button>
-                ${currentVideo && currentVideo.userId === currentUser?.uid ? `
-                    <button class="comment-action-btn pin-comment" data-comment-id="${comment.id}" data-video-id="${currentVideo.id}">
-                        <i class="fas fa-thumbtack"></i>
-                    </button>
-                    <button class="comment-action-btn heart-comment-btn" data-comment-id="${comment.id}" data-video-id="${currentVideo.id}">
-                        <i class="fas fa-heart"></i>
-                    </button>
-                ` : ''}
-            </div>
-            <div class="comment-replies" id="replies-${comment.id}"></div>
-        </div>
-    `;
-    
-    return commentElement;
+// Загрузка данных пользователя
+async function loadUserData(uid) {
+    try {
+        const doc = await db.collection('users').doc(uid).get();
+        if (doc.exists) {
+            currentUserData = {
+                id: doc.id,
+                ...doc.data()
+            };
+            updateUserUI();
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки данных пользователя:', error);
+        showToast('Ошибка загрузки профиля', 'error');
+    }
 }
 
-async function loadReplies(commentId, commentElement) {
-    const result = await firebaseManager.getReplies(commentId);
-    if (result.success && result.replies.length > 0) {
-        const repliesContainer = commentElement.querySelector(`#replies-${commentId}`);
-        if (repliesContainer) {
-            result.replies.forEach(reply => {
-                const replyElement = createCommentElement(reply);
-                replyElement.classList.add('reply');
-                replyElement.style.marginLeft = '20px';
-                repliesContainer.appendChild(replyElement);
+// Загрузка видео
+async function loadVideos() {
+    try {
+        const snapshot = await db.collection('videos')
+            .orderBy('createdAt', 'desc')
+            .limit(20)
+            .get();
+        
+        videos = [];
+        snapshot.forEach(doc => {
+            videos.push({
+                id: doc.id,
+                ...doc.data()
             });
-        }
-    }
-}
-
-// Рендеринг уведомлений
-function renderNotifications(notifications) {
-    notificationsList.innerHTML = '';
-    unreadNotifications = notifications.filter(n => !n.read).length;
-    
-    if (notifications.length === 0) {
-        notificationsList.innerHTML = `
-            <div class="notification-item">
-                <div class="notification-content">Нет уведомлений</div>
-            </div>
-        `;
-        notificationBadge.style.display = 'none';
-        return;
-    }
-    
-    if (unreadNotifications > 0) {
-        notificationBadge.textContent = unreadNotifications;
-        notificationBadge.style.display = 'flex';
-    } else {
-        notificationBadge.style.display = 'none';
-    }
-    
-    notifications.forEach(notification => {
-        const notificationElement = document.createElement('div');
-        notificationElement.className = `notification-item ${notification.read ? '' : 'unread'}`;
-        notificationElement.dataset.notificationId = notification.id;
-        
-        const timeAgo = notification.createdAt ? formatDate(notification.createdAt.toDate()) : 'только что';
-        let content = '';
-        
-        switch (notification.type) {
-            case 'subscribers':
-                content = `🎉 ${notification.data.message}`;
-                break;
-            case 'comment':
-                content = `💬 ${notification.data.username} прокомментировал ваше видео "${notification.data.videoTitle}"`;
-                break;
-            case 'like':
-                content = `👍 ${notification.data.username} поставил лайк вашему видео "${notification.data.videoTitle}"`;
-                break;
-            case 'reply':
-                content = `💬 ${notification.data.username} ответил на ваш комментарий`;
-                break;
-            default:
-                content = notification.data.message || 'Новое уведомление';
-        }
-        
-        notificationElement.innerHTML = `
-            <div class="notification-content">${content}</div>
-            <div class="notification-time">${timeAgo}</div>
-        `;
-        
-        notificationElement.addEventListener('click', () => {
-            markNotificationAsRead(notification.id);
         });
         
-        notificationsList.appendChild(notificationElement);
-    });
+        renderVideos();
+        renderShorts();
+    } catch (error) {
+        console.error('Ошибка загрузки видео:', error);
+        showToast('Ошибка загрузки видео', 'error');
+    }
 }
 
-// ==============================================
-// ФУНКЦИИ КОММЕНТАРИЕВ
-// ==============================================
-
-// Добавление комментария
-async function addComment() {
-    if (!currentUser) {
-        showModal(authModal);
-        return;
-    }
+// Загрузка подписок
+async function loadSubscriptions() {
+    if (!currentUser) return;
     
-    const text = commentInput.value.trim();
-    if (!text) {
-        showAlert(null, 'Введите текст комментария', 'error');
-        return;
-    }
-    
-    const result = await firebaseManager.addComment(currentVideo.id, text);
-    if (result.success) {
-        commentInput.value = '';
-        loadComments(currentVideo.id);
-        showAlert(null, 'Комментарий добавлен', 'success');
-    } else {
-        showAlert(null, result.error, 'error');
+    try {
+        const snapshot = await db.collection('subscriptions')
+            .where('subscriberId', '==', currentUser.uid)
+            .get();
+        
+        subscriptions = [];
+        snapshot.forEach(doc => {
+            subscriptions.push(doc.data().channelId);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки подписок:', error);
     }
 }
-
-// Загрузка комментариев
-async function loadComments(videoId) {
-    const result = await firebaseManager.getComments(videoId);
-    if (result.success) {
-        renderComments(result.comments);
-        commentsCount.textContent = result.comments.length;
-    }
-}
-
-// Лайк комментария
-async function likeComment(commentId) {
-    if (!currentUser) {
-        showModal(authModal);
-        return;
-    }
-    
-    const result = await firebaseManager.toggleLikeComment(commentId, currentUser.uid);
-    if (result.success) {
-        loadComments(currentVideo.id);
-    }
-}
-
-// Закрепление комментария
-async function pinComment(commentId, videoId) {
-    if (!currentUser || currentVideo.userId !== currentUser.uid) {
-        showAlert(null, 'Только автор видео может закреплять комментарии', 'error');
-        return;
-    }
-    
-    const result = await firebaseManager.togglePinComment(commentId, videoId, currentUser.uid);
-    if (result.success) {
-        loadComments(currentVideo.id);
-        showAlert(null, result.pinned ? 'Комментарий закреплен' : 'Комментарий откреплен', 'success');
-    } else {
-        showAlert(null, result.error, 'error');
-    }
-}
-
-// Сердечко от автора
-async function heartComment(commentId, videoId) {
-    if (!currentUser || currentVideo.userId !== currentUser.uid) {
-        showAlert(null, 'Только автор видео может ставить сердечки', 'error');
-        return;
-    }
-    
-    const result = await firebaseManager.toggleHeartComment(commentId, videoId, currentUser.uid);
-    if (result.success) {
-        loadComments(currentVideo.id);
-        showAlert(null, result.hearted ? 'Сердечко добавлено' : 'Сердечко убрано', 'success');
-    } else {
-        showAlert(null, result.error, 'error');
-    }
-}
-
-// ==============================================
-// ФУНКЦИИ УВЕДОМЛЕНИЙ
-// ==============================================
 
 // Загрузка уведомлений
 async function loadNotifications() {
     if (!currentUser) return;
     
-    const result = await firebaseManager.getNotifications(currentUser.uid);
-    if (result.success) {
-        renderNotifications(result.notifications);
+    try {
+        const snapshot = await db.collection('notifications')
+            .where('userId', '==', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .limit(20)
+            .get();
+        
+        notifications = [];
+        snapshot.forEach(doc => {
+            notifications.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки уведомлений:', error);
     }
 }
 
-// Отметка уведомления как прочитанного
-async function markNotificationAsRead(notificationId) {
-    const result = await firebaseManager.markNotificationAsRead(notificationId);
-    if (result.success) {
-        loadNotifications();
+// Инициализация обработчиков событий
+function initEventListeners() {
+    // Навигация
+    document.querySelectorAll('[data-page]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = btn.dataset.page;
+            showPage(page);
+        });
+    });
+    
+    // Категории видео
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            filterVideos(btn.dataset.category);
+        });
+    });
+    
+    // Вкладки профиля
+    document.querySelectorAll('.profile-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tab.dataset.tab + 'Tab').classList.add('active');
+        });
+    });
+    
+    // Вкладки студии
+    document.querySelectorAll('.studio-nav').forEach(nav => {
+        nav.addEventListener('click', () => {
+            document.querySelectorAll('.studio-nav').forEach(n => n.classList.remove('active'));
+            nav.classList.add('active');
+            
+            document.querySelectorAll('.studio-tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(nav.dataset.studioTab + 'Tab').classList.add('active');
+        });
+    });
+    
+    // Вкладки настроек
+    document.querySelectorAll('.settings-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            document.querySelectorAll('.settings-section').forEach(section => section.classList.remove('active'));
+            document.getElementById(tab.dataset.settingsTab + 'Tab').classList.add('active');
+        });
+    });
+    
+    // Авторизация
+    document.getElementById('userBtn').addEventListener('click', () => {
+        if (currentUser) {
+            showPage('profile');
+        } else {
+            showModal('authModal');
+        }
+    });
+    
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    
+    // Форма входа
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        
+        try {
+            await auth.signInWithEmailAndPassword(email, password);
+            hideModal('authModal');
+            showToast('Вход выполнен успешно!', 'success');
+        } catch (error) {
+            showToast(getAuthError(error.code), 'error');
+        }
+    });
+    
+    // Форма регистрации
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('registerUsername').value;
+        const handle = document.getElementById('registerHandle').value;
+        const email = document.getElementById('registerEmail').value;
+        const password = document.getElementById('registerPassword').value;
+        const confirmPassword = document.getElementById('registerConfirmPassword').value;
+        
+        if (password !== confirmPassword) {
+            showToast('Пароли не совпадают', 'error');
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9_]+$/.test(handle)) {
+            showToast('Имя пользователя может содержать только буквы, цифры и нижнее подчеркивание', 'error');
+            return;
+        }
+        
+        try {
+            // Проверка уникальности имени пользователя
+            const snapshot = await db.collection('users')
+                .where('handle', '==', handle.toLowerCase())
+                .get();
+            
+            if (!snapshot.empty) {
+                showToast('Это имя пользователя уже занято', 'error');
+                return;
+            }
+            
+            // Создание пользователя
+            const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+            const user = userCredential.user;
+            
+            // Сохранение данных пользователя
+            await db.collection('users').doc(user.uid).set({
+                username: username,
+                handle: handle.toLowerCase(),
+                email: email,
+                avatarColor: getRandomColor(),
+                subscribers: 0,
+                videos: 0,
+                views: 0,
+                likes: 0,
+                isVerified: false,
+                bio: '',
+                links: [],
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            hideModal('authModal');
+            showToast('Регистрация успешна!', 'success');
+            
+        } catch (error) {
+            showToast(getAuthError(error.code), 'error');
+        }
+    });
+    
+    // Загрузка видео
+    document.getElementById('uploadBtn').addEventListener('click', () => {
+        if (!currentUser) {
+            showModal('authModal');
+            return;
+        }
+        showModal('uploadModal');
+    });
+    
+    document.getElementById('uploadStudioBtn').addEventListener('click', () => {
+        showModal('uploadModal');
+    });
+    
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const title = document.getElementById('videoTitle').value;
+        const description = document.getElementById('videoDescription').value;
+        const type = document.getElementById('videoType').value;
+        const category = document.getElementById('videoCategory').value;
+        const url = document.getElementById('videoUrl').value;
+        const thumbnail = document.getElementById('thumbnailUrl').value;
+        const tags = document.getElementById('videoTags').value.split(',').map(tag => tag.trim());
+        
+        try {
+            const videoData = {
+                title: title,
+                description: description,
+                type: type,
+                category: category,
+                url: url,
+                thumbnail: thumbnail || getDefaultThumbnail(category, type),
+                tags: tags,
+                userId: currentUser.uid,
+                username: currentUserData.username,
+                handle: currentUserData.handle,
+                avatarColor: currentUserData.avatarColor,
+                views: 0,
+                likes: 0,
+                comments: 0,
+                subscribers: currentUserData.subscribers || 0,
+                duration: '0:00',
+                isVerified: currentUserData.isVerified || false,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            await db.collection('videos').add(videoData);
+            
+            // Обновление счетчика видео пользователя
+            await db.collection('users').doc(currentUser.uid).update({
+                videos: firebase.firestore.FieldValue.increment(1)
+            });
+            
+            hideModal('uploadModal');
+            showToast('Видео успешно загружено!', 'success');
+            
+            // Обновление списка видео
+            loadVideos();
+            
+        } catch (error) {
+            console.error('Ошибка загрузки видео:', error);
+            showToast('Ошибка загрузки видео', 'error');
+        }
+    });
+    
+    // Редактирование профиля
+    document.getElementById('editProfileBtn').addEventListener('click', () => {
+        if (!currentUser) return;
+        
+        document.getElementById('editUsername').value = currentUserData.username || '';
+        document.getElementById('editBio').value = currentUserData.bio || '';
+        document.getElementById('editAvatarUrl').value = currentUserData.avatarUrl || '';
+        document.getElementById('editBannerUrl').value = currentUserData.bannerUrl || '';
+        document.getElementById('editLinks').value = currentUserData.links ? currentUserData.links.join('\n') : '';
+        
+        showModal('editProfileModal');
+    });
+    
+    document.getElementById('editProfileForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const username = document.getElementById('editUsername').value;
+        const bio = document.getElementById('editBio').value;
+        const avatarUrl = document.getElementById('editAvatarUrl').value;
+        const bannerUrl = document.getElementById('editBannerUrl').value;
+        const links = document.getElementById('editLinks').value.split('\n').filter(link => link.trim());
+        
+        try {
+            await db.collection('users').doc(currentUser.uid).update({
+                username: username,
+                bio: bio,
+                avatarUrl: avatarUrl || null,
+                bannerUrl: bannerUrl || null,
+                links: links,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            
+            await loadUserData(currentUser.uid);
+            hideModal('editProfileModal');
+            showToast('Профиль успешно обновлен!', 'success');
+            
+        } catch (error) {
+            console.error('Ошибка обновления профиля:', error);
+            showToast('Ошибка обновления профиля', 'error');
+        }
+    });
+    
+    // Настройки
+    document.getElementById('saveAccountSettings').addEventListener('click', async () => {
+        if (!currentUser) return;
+        
+        const username = document.getElementById('settingsUsername').value;
+        const email = document.getElementById('settingsEmail').value;
+        const password = document.getElementById('settingsPassword').value;
+        const confirmPassword = document.getElementById('settingsConfirmPassword').value;
+        
+        if (password && password !== confirmPassword) {
+            showToast('Пароли не совпадают', 'error');
+            return;
+        }
+        
+        try {
+            const updates = {
+                username: username,
+                email: email,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            if (password) {
+                await currentUser.updatePassword(password);
+            }
+            
+            await db.collection('users').doc(currentUser.uid).update(updates);
+            
+            if (email !== currentUser.email) {
+                await currentUser.updateEmail(email);
+            }
+            
+            await loadUserData(currentUser.uid);
+            showToast('Настройки сохранены!', 'success');
+            
+        } catch (error) {
+            console.error('Ошибка сохранения настроек:', error);
+            showToast('Ошибка сохранения настроек', 'error');
+        }
+    });
+    
+    // Удаление аккаунта
+    document.getElementById('deleteAccountBtn').addEventListener('click', async () => {
+        if (!confirm('Вы уверены, что хотите удалить аккаунт? Это действие нельзя отменить.')) {
+            return;
+        }
+        
+        try {
+            await db.collection('users').doc(currentUser.uid).delete();
+            await currentUser.delete();
+            showToast('Аккаунт успешно удален', 'success');
+            setTimeout(() => location.reload(), 2000);
+        } catch (error) {
+            console.error('Ошибка удаления аккаунта:', error);
+            showToast('Ошибка удаления аккаунта', 'error');
+        }
+    });
+    
+    // Закрытие модальных окон
+    document.querySelectorAll('.close-modal').forEach(btn => {
+        btn.addEventListener('click', () => {
+            btn.closest('.modal').classList.remove('active');
+        });
+    });
+    
+    // Закрытие модальных окон при клике вне
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    });
+    
+    // Поиск
+    document.getElementById('searchBtn').addEventListener('click', searchVideos);
+    document.getElementById('searchInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchVideos();
+    });
+    
+    // Переключение тем
+    document.querySelectorAll('.theme-option').forEach(option => {
+        option.addEventListener('click', () => {
+            document.querySelectorAll('.theme-option').forEach(o => o.classList.remove('active'));
+            option.classList.add('active');
+            
+            const theme = option.dataset.theme;
+            document.documentElement.className = theme;
+            localStorage.setItem('theme', theme);
+        });
+    });
+    
+    // Загрузка темы из localStorage
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.className = savedTheme;
+    document.querySelector(`.theme-option[data-theme="${savedTheme}"]`)?.classList.add('active');
+    
+    // Переключение навигации на мобильных устройствах
+    document.getElementById('navToggle').addEventListener('click', () => {
+        document.querySelector('.nav-menu').classList.toggle('active');
+    });
+}
+
+// Показать страницу
+function showPage(pageId) {
+    // Скрыть все страницы
+    document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active');
+    });
+    
+    // Показать выбранную страницу
+    document.getElementById(pageId + 'Page').classList.add('active');
+    
+    // Обновить активный элемент навигации
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Если есть соответствующий элемент навигации, сделать его активным
+    const navItem = document.querySelector(`[data-page="${pageId}"]`);
+    if (navItem) navItem.classList.add('active');
+    
+    // Загрузить данные для страницы
+    switch (pageId) {
+        case 'profile':
+            loadProfileData();
+            break;
+        case 'studio':
+            loadStudioData();
+            break;
+        case 'settings':
+            loadSettingsData();
+            break;
+        case 'subscriptions':
+            loadSubscriptionsData();
+            break;
+    }
+    
+    // Скрыть меню навигации на мобильных устройствах
+    document.querySelector('.nav-menu').classList.remove('active');
+}
+
+// Показать модальное окно
+function showModal(modalId) {
+    document.getElementById(modalId).classList.add('active');
+}
+
+// Скрыть модальное окно
+function hideModal(modalId) {
+    document.getElementById(modalId).classList.remove('active');
+}
+
+// Рендеринг видео
+function renderVideos() {
+    const grid = document.getElementById('videoGrid');
+    grid.innerHTML = '';
+    
+    videos.forEach(video => {
+        if (video.type === 'short') return; // Пропускаем Shorts
+        
+        const card = createVideoCard(video);
+        grid.appendChild(card);
+    });
+}
+
+// Рендеринг Shorts
+function renderShorts() {
+    const grid = document.getElementById('shortsGrid');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    
+    videos.forEach(video => {
+        if (video.type !== 'short') return;
+        
+        const card = createShortCard(video);
+        grid.appendChild(card);
+    });
+}
+
+// Создание карточки видео
+function createVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.dataset.videoId = video.id;
+    
+    card.innerHTML = `
+        <div class="video-thumbnail">
+            <img src="${video.thumbnail}" alt="${video.title}" onerror="this.src='https://via.placeholder.com/300x169?text=HubTube'">
+            <div class="video-duration">${video.duration || '0:00'}</div>
+        </div>
+        <div class="video-info">
+            <h3 class="video-title">${video.title}</h3>
+            <div class="video-meta">
+                <span>${video.username}</span>
+                <span>•</span>
+                <span>${formatViews(video.views)} просмотров</span>
+                <span>•</span>
+                <span>${formatDate(video.createdAt?.toDate())}</span>
+            </div>
+        </div>
+    `;
+    
+    card.addEventListener('click', () => openVideo(video));
+    return card;
+}
+
+// Создание карточки Short
+function createShortCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    card.dataset.videoId = video.id;
+    
+    card.innerHTML = `
+        <div class="video-thumbnail">
+            <img src="${video.thumbnail}" alt="${video.title}" onerror="this.src='https://via.placeholder.com/169x300?text=Shorts'">
+            <div class="short-badge">SHORTS</div>
+        </div>
+        <div class="video-info">
+            <h3 class="video-title">${video.title}</h3>
+            <div class="video-meta">
+                <span>${formatViews(video.views)} просмотров</span>
+            </div>
+        </div>
+    `;
+    
+    card.addEventListener('click', () => openVideo(video));
+    return card;
+}
+
+// Фильтрация видео по категории
+function filterVideos(category) {
+    const grid = document.getElementById('videoGrid');
+    grid.innerHTML = '';
+    
+    const filteredVideos = category === 'all' 
+        ? videos.filter(v => v.type !== 'short')
+        : videos.filter(v => v.type !== 'short' && v.category === category);
+    
+    filteredVideos.forEach(video => {
+        const card = createVideoCard(video);
+        grid.appendChild(card);
+    });
+}
+
+// Открытие видео
+function openVideo(video) {
+    currentVideo = video;
+    
+    // Увеличить счетчик просмотров
+    db.collection('videos').doc(video.id).update({
+        views: firebase.firestore.FieldValue.increment(1)
+    });
+    
+    // Обновить информацию в модальном окне
+    document.getElementById('videoModalTitle').textContent = video.title;
+    document.getElementById('videoChannelName').textContent = video.username;
+    document.getElementById('videoViews').textContent = formatViews(video.views + 1) + ' просмотров';
+    document.getElementById('videoDate').textContent = formatDate(video.createdAt?.toDate());
+    document.getElementById('videoModalDescription').textContent = video.description;
+    document.getElementById('likeCount').textContent = formatNumber(video.likes);
+    
+    // Установить проверку канала
+    if (video.isVerified) {
+        document.getElementById('videoChannelVerified').style.display = 'inline';
+    } else {
+        document.getElementById('videoChannelVerified').style.display = 'none';
+    }
+    
+    // Установить аватар канала
+    const avatar = document.getElementById('videoChannelAvatar');
+    avatar.textContent = video.username.charAt(0).toUpperCase();
+    avatar.style.backgroundColor = video.avatarColor;
+    
+    // Обновить плеер
+    const player = document.getElementById('videoPlayer');
+    player.innerHTML = createVideoPlayer(video.url);
+    
+    // Загрузить комментарии
+    loadComments(video.id);
+    
+    // Показать модальное окно
+    showModal('videoModal');
+}
+
+// Создание видеоплеера
+function createVideoPlayer(url) {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+        const videoId = getYouTubeId(url);
+        if (videoId) {
+            return `
+                <iframe 
+                    src="https://www.youtube.com/embed/${videoId}?autoplay=1" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            `;
+        }
+    } else if (url.includes('vimeo.com')) {
+        const videoId = getVimeoId(url);
+        if (videoId) {
+            return `
+                <iframe 
+                    src="https://player.vimeo.com/video/${videoId}?autoplay=1" 
+                    frameborder="0" 
+                    allow="autoplay; fullscreen; picture-in-picture" 
+                    allowfullscreen>
+                </iframe>
+            `;
+        }
+    }
+    
+    return `
+        <video controls autoplay>
+            <source src="${url}" type="video/mp4">
+            Ваш браузер не поддерживает видео.
+        </video>
+    `;
+}
+
+// Получение ID YouTube видео
+function getYouTubeId(url) {
+    const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[7].length === 11) ? match[7] : null;
+}
+
+// Получение ID Vimeo видео
+function getVimeoId(url) {
+    const regExp = /https?:\/\/(?:www\.|player\.)?vimeo.com\/(?:channels\/(?:\w+\/)?|groups\/([^\/]*)\/videos\/|album\/(\d+)\/video\/|video\/|)(\d+)(?:$|\/|\?)/;
+    const match = url.match(regExp);
+    return match ? match[3] : null;
+}
+
+// Загрузка комментариев
+async function loadComments(videoId) {
+    try {
+        const snapshot = await db.collection('comments')
+            .where('videoId', '==', videoId)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get();
+        
+        const list = document.getElementById('commentsList');
+        list.innerHTML = '';
+        
+        snapshot.forEach(doc => {
+            const comment = doc.data();
+            const commentElement = createCommentElement(comment);
+            list.appendChild(commentElement);
+        });
+        
+        document.getElementById('commentsCount').textContent = snapshot.size;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки комментариев:', error);
     }
 }
 
-// Отметить все как прочитанные
-async function markAllNotificationsAsRead() {
+// Создание элемента комментария
+function createCommentElement(comment) {
+    const div = document.createElement('div');
+    div.className = 'comment-item';
+    
+    div.innerHTML = `
+        <div class="comment-avatar" style="background-color: ${comment.avatarColor || '#666'}">
+            ${comment.username?.charAt(0).toUpperCase() || 'U'}
+        </div>
+        <div class="comment-content">
+            <div class="comment-header">
+                <span class="comment-author">${comment.username || 'Аноним'}</span>
+                <span class="comment-time">${formatDate(comment.createdAt?.toDate())}</span>
+            </div>
+            <div class="comment-text">${formatCommentText(comment.text)}</div>
+            <div class="comment-actions">
+                <button class="comment-action">
+                    <i class="fas fa-thumbs-up"></i> ${comment.likes || 0}
+                </button>
+                <button class="comment-action">
+                    <i class="fas fa-reply"></i> Ответить
+                </button>
+            </div>
+        </div>
+    `;
+    
+    return div;
+}
+
+// Форматирование текста комментария
+function formatCommentText(text) {
+    if (!text) return '';
+    return text.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
+}
+
+// Отправка комментария
+document.getElementById('submitCommentBtn')?.addEventListener('click', async () => {
+    if (!currentUser) {
+        showModal('authModal');
+        return;
+    }
+    
+    const input = document.getElementById('commentInput');
+    const text = input.value.trim();
+    
+    if (!text) return;
+    
+    try {
+        await db.collection('comments').add({
+            videoId: currentVideo.id,
+            userId: currentUser.uid,
+            username: currentUserData.username,
+            avatarColor: currentUserData.avatarColor,
+            text: text,
+            likes: 0,
+            likedBy: [],
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Обновить счетчик комментариев
+        await db.collection('videos').doc(currentVideo.id).update({
+            comments: firebase.firestore.FieldValue.increment(1)
+        });
+        
+        // Очистить поле ввода
+        input.value = '';
+        
+        // Перезагрузить комментарии
+        loadComments(currentVideo.id);
+        
+        showToast('Комментарий добавлен', 'success');
+        
+    } catch (error) {
+        console.error('Ошибка добавления комментария:', error);
+        showToast('Ошибка добавления комментария', 'error');
+    }
+});
+
+// Загрузка данных профиля
+async function loadProfileData() {
     if (!currentUser) return;
     
-    const result = await firebaseManager.markAllNotificationsAsRead(currentUser.uid);
-    if (result.success) {
-        loadNotifications();
-        showAlert(null, 'Все уведомления прочитаны', 'success');
+    const user = currentUserData || await loadUserData(currentUser.uid);
+    
+    document.getElementById('profileUsername').textContent = user.username;
+    document.getElementById('profileHandle').textContent = '@' + user.handle;
+    document.getElementById('profileBio').textContent = user.bio || 'Нет описания';
+    document.getElementById('profileSubscribers').textContent = formatNumber(user.subscribers || 0) + ' подписчиков';
+    document.getElementById('profileVideos').textContent = formatNumber(user.videos || 0) + ' видео';
+    document.getElementById('profileJoined').textContent = formatDate(user.createdAt?.toDate());
+    document.getElementById('profileTotalViews').textContent = formatNumber(user.views || 0);
+    document.getElementById('profileTotalLikes').textContent = formatNumber(user.likes || 0);
+    document.getElementById('profileAbout').textContent = user.bio || 'Нет описания';
+    
+    if (user.isVerified) {
+        document.getElementById('profileVerified').style.display = 'inline';
+    } else {
+        document.getElementById('profileVerified').style.display = 'none';
     }
+    
+    // Установить аватар
+    const avatar = document.getElementById('profileAvatar');
+    avatar.querySelector('span').textContent = user.username.charAt(0).toUpperCase();
+    avatar.style.backgroundColor = user.avatarColor;
+    
+    if (user.avatarUrl) {
+        avatar.innerHTML = `<img src="${user.avatarUrl}" alt="${user.username}">`;
+    }
+    
+    // Установить баннер
+    if (user.bannerUrl) {
+        document.getElementById('profileBanner').style.backgroundImage = `url(${user.bannerUrl})`;
+    }
+    
+    // Загрузить ссылки
+    const linksContainer = document.getElementById('profileLinks');
+    linksContainer.innerHTML = '';
+    
+    if (user.links && user.links.length > 0) {
+        user.links.forEach(link => {
+            const linkElement = document.createElement('a');
+            linkElement.href = link;
+            linkElement.textContent = link;
+            linkElement.target = '_blank';
+            linkElement.className = 'profile-link';
+            linksContainer.appendChild(linkElement);
+        });
+    }
+    
+    // Загрузить видео пользователя
+    loadUserVideos();
+}
+
+// Загрузка видео пользователя
+async function loadUserVideos() {
+    if (!currentUser) return;
+    
+    try {
+        const snapshot = await db.collection('videos')
+            .where('userId', '==', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .get();
+        
+        const grid = document.getElementById('profileVideosGrid');
+        if (!grid) return;
+        
+        grid.innerHTML = '';
+        
+        snapshot.forEach(doc => {
+            const video = {
+                id: doc.id,
+                ...doc.data()
+            };
+            
+            const card = createVideoCard(video);
+            grid.appendChild(card);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки видео пользователя:', error);
+    }
+}
+
+// Загрузка данных студии
+async function loadStudioData() {
+    if (!currentUser) return;
+    
+    const user = currentUserData || await loadUserData(currentUser.uid);
+    
+    document.getElementById('studioViews').textContent = formatNumber(user.views || 0);
+    document.getElementById('studioSubscribers').textContent = formatNumber(user.subscribers || 0);
+    document.getElementById('studioVideos').textContent = formatNumber(user.videos || 0);
+    document.getElementById('studioLikes').textContent = formatNumber(user.likes || 0);
+    
+    // Загрузить видео для студии
+    loadStudioVideos();
+}
+
+// Загрузка видео для студии
+async function loadStudioVideos() {
+    if (!currentUser) return;
+    
+    try {
+        const snapshot = await db.collection('videos')
+            .where('userId', '==', currentUser.uid)
+            .orderBy('createdAt', 'desc')
+            .get();
+        
+        const grid = document.getElementById('studioVideosGrid');
+        if (!grid) return;
+        
+        grid.innerHTML = '';
+        
+        snapshot.forEach(doc => {
+            const video = {
+                id: doc.id,
+                ...doc.data()
+            };
+            
+            const card = createStudioVideoCard(video);
+            grid.appendChild(card);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки видео для студии:', error);
+    }
+}
+
+// Создание карточки видео для студии
+function createStudioVideoCard(video) {
+    const card = document.createElement('div');
+    card.className = 'video-card';
+    
+    card.innerHTML = `
+        <div class="video-thumbnail">
+            <img src="${video.thumbnail}" alt="${video.title}" onerror="this.src='https://via.placeholder.com/300x169?text=HubTube'">
+            ${video.type === 'short' ? '<div class="short-badge">SHORTS</div>' : ''}
+        </div>
+        <div class="video-info">
+            <h3 class="video-title">${video.title}</h3>
+            <div class="video-meta">
+                <span>${formatViews(video.views)} просмотров</span>
+                <span>•</span>
+                <span>${formatNumber(video.likes)} лайков</span>
+                <span>•</span>
+                <span>${formatDate(video.createdAt?.toDate())}</span>
+            </div>
+            <div class="video-actions">
+                <button class="btn btn-secondary btn-sm">Редактировать</button>
+                <button class="btn btn-danger btn-sm">Удалить</button>
+            </div>
+        </div>
+    `;
+    
+    return card;
+}
+
+// Загрузка данных настроек
+function loadSettingsData() {
+    if (!currentUser) return;
+    
+    document.getElementById('settingsUsername').value = currentUserData?.username || '';
+    document.getElementById('settingsEmail').value = currentUser?.email || '';
+}
+
+// Загрузка данных подписок
+async function loadSubscriptionsData() {
+    if (!currentUser) return;
+    
+    try {
+        const channelsGrid = document.getElementById('channelsGrid');
+        if (!channelsGrid) return;
+        
+        channelsGrid.innerHTML = '';
+        
+        // Загрузить данные каналов, на которые подписан пользователь
+        for (const channelId of subscriptions) {
+            const doc = await db.collection('users').doc(channelId).get();
+            if (doc.exists) {
+                const channel = doc.data();
+                const channelElement = createChannelElement(channel);
+                channelsGrid.appendChild(channelElement);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки подписок:', error);
+    }
+}
+
+// Создание элемента канала
+function createChannelElement(channel) {
+    const div = document.createElement('div');
+    div.className = 'channel-card';
+    
+    div.innerHTML = `
+        <div class="channel-avatar" style="background-color: ${channel.avatarColor}">
+            ${channel.username?.charAt(0).toUpperCase() || 'U'}
+        </div>
+        <div class="channel-info">
+            <h3 class="channel-name">${channel.username}</h3>
+            <p class="channel-handle">@${channel.handle}</p>
+            <p class="channel-subscribers">${formatNumber(channel.subscribers || 0)} подписчиков</p>
+        </div>
+        <button class="btn btn-secondary">Отписаться</button>
+    `;
+    
+    return div;
+}
+
+// Поиск видео
+async function searchVideos() {
+    const query = document.getElementById('searchInput').value.trim().toLowerCase();
+    if (!query) return;
+    
+    try {
+        const snapshot = await db.collection('videos')
+            .where('title', '>=', query)
+            .where('title', '<=', query + '\uf8ff')
+            .get();
+        
+        const searchResults = [];
+        snapshot.forEach(doc => {
+            searchResults.push({
+                id: doc.id,
+                ...doc.data()
+            });
+        });
+        
+        // Показать результаты поиска
+        const grid = document.getElementById('videoGrid');
+        grid.innerHTML = '';
+        
+        searchResults.forEach(video => {
+            if (video.type === 'short') return;
+            const card = createVideoCard(video);
+            grid.appendChild(card);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка поиска:', error);
+        showToast('Ошибка поиска', 'error');
+    }
+}
+
+// Выход из системы
+async function logout() {
+    try {
+        await auth.signOut();
+        currentUser = null;
+        currentUserData = null;
+        updateUI();
+        showToast('Вы успешно вышли', 'success');
+        showPage('home');
+    } catch (error) {
+        console.error('Ошибка выхода:', error);
+        showToast('Ошибка выхода', 'error');
+    }
+}
+
+// Обновление UI
+function updateUI() {
+    const usernameElement = document.getElementById('username');
+    const userBtn = document.getElementById('userBtn');
+    
+    if (currentUser) {
+        usernameElement.textContent = currentUserData?.username || 'Профиль';
+        userBtn.innerHTML = `
+            <i class="fas fa-user-circle"></i>
+            <span>${currentUserData?.username || 'Профиль'}</span>
+            <i class="fas fa-chevron-down"></i>
+        `;
+        
+        // Показать элементы для авторизованных пользователей
+        document.querySelectorAll('.auth-only').forEach(el => {
+            el.style.display = '';
+        });
+        
+        // Скрыть элементы для неавторизованных пользователей
+        document.querySelectorAll('.guest-only').forEach(el => {
+            el.style.display = 'none';
+        });
+        
+    } else {
+        usernameElement.textContent = 'Войти';
+        userBtn.innerHTML = `
+            <i class="fas fa-user-circle"></i>
+            <span>Войти</span>
+            <i class="fas fa-chevron-down"></i>
+        `;
+        
+        // Скрыть элементы для авторизованных пользователей
+        document.querySelectorAll('.auth-only').forEach(el => {
+            el.style.display = 'none';
+        });
+        
+        // Показать элементы для неавторизованных пользователей
+        document.querySelectorAll('.guest-only').forEach(el => {
+            el.style.display = '';
+        });
+    }
+}
+
+// Обновление UI пользователя
+function updateUserUI() {
+    if (!currentUserData) return;
+    
+    // Обновить имя пользователя в навигации
+    const usernameElement = document.getElementById('username');
+    if (usernameElement) {
+        usernameElement.textContent = currentUserData.username;
+    }
+}
+
+// Показать уведомление (тост)
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+// Форматирование чисел
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    }
+    if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+// Форматирование просмотров
+function formatViews(views) {
+    return formatNumber(views);
+}
+
+// Форматирование даты
+function formatDate(date) {
+    if (!date) return 'Недавно';
+    
+    const now = new Date();
+    const diff = now - date;
+    
+    if (diff < 60000) return 'только что';
+    if (diff < 3600000) return Math.floor(diff / 60000) + ' мин назад';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + ' ч назад';
+    if (diff < 604800000) return Math.floor(diff / 86400000) + ' дн назад';
+    
+    return date.toLocaleDateString('ru-RU');
+}
+
+// Получение случайного цвета
+function getRandomColor() {
+    const colors = [
+        '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57',
+        '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#ff9f43'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// Получение обложки по умолчанию
+function getDefaultThumbnail(category, type) {
+    if (type === 'short') {
+        return 'https://via.placeholder.com/1080x1920/ff0000/ffffff?text=Shorts';
+    }
+    
+    const thumbnails = {
+        music: 'https://via.placeholder.com/1280x720/4ecdc4/ffffff?text=Музыка',
+        gaming: 'https://via.placeholder.com/1280x720/5f27cd/ffffff?text=Игры',
+        education: 'https://via.placeholder.com/1280x720/00d2d3/ffffff?text=Образование',
+        sports: 'https://via.placeholder.com/1280x720/ff9f43/ffffff?text=Спорт',
+        tech: 'https://via.placeholder.com/1280x720/54a0ff/ffffff?text=Технологии',
+        news: 'https://via.placeholder.com/1280x720/ff9ff3/ffffff?text=Новости',
+        cartoons: 'https://via.placeholder.com/1280x720/96ceb4/ffffff?text=Мультфильмы',
+        entertainment: 'https://via.placeholder.com/1280x720/feca57/ffffff?text=Развлечения'
+    };
+    
+    return thumbnails[category] || 'https://via.placeholder.com/1280x720/666666/ffffff?text=HubTube';
+}
+
+// Получение сообщения об ошибке авторизации
+function getAuthError(code) {
+    const errors = {
+        'auth/user-not-found': 'Пользователь не найден',
+        'auth/wrong-password': 'Неверный пароль',
+        'auth/email-already-in-use': 'Email уже используется',
+        'auth/invalid-email': 'Неверный формат email',
+        'auth/weak-password': 'Пароль слишком простой',
+        'auth/too-many-requests': 'Слишком много попыток. Попробуйте позже',
+        'auth/network-request-failed': 'Ошибка сети. Проверьте подключение'
+    };
+    
+    return errors[code] || 'Произошла ошибка';
 }
 
 // Проверка достижений
 async function checkAchievements() {
     if (!currentUser) return;
     
-    const result = await firebaseManager.checkAchievements(currentUser.uid);
-    if (result.success && result.achievements.length > 0) {
-        result.achievements.forEach(achievement => {
-            // Создаем уведомление
-            firebaseManager.createNotification(currentUser.uid, 'subscribers', {
-                message: achievement.message
-            });
-            
-            // Показываем всплывающее уведомление
-            showAlert(null, achievement.message, 'success');
+    const user = currentUserData;
+    const achievements = [];
+    
+    // Проверка подписчиков
+    if (user.subscribers >= 10 && !user.achieved10) {
+        achievements.push({
+            type: 'subscribers',
+            count: 10,
+            message: '🎉 Вы набрали 10 подписчиков!'
+        });
+    }
+    
+    if (user.subscribers >= 50 && !user.achieved50) {
+        achievements.push({
+            type: 'subscribers',
+            count: 50,
+            message: '🎉 Вы набрали 50 подписчиков!'
+        });
+    }
+    
+    if (user.subscribers >= 100 && !user.achieved100) {
+        achievements.push({
+            type: 'subscribers',
+            count: 100,
+            message: '🎉 Вы набрали 100 подписчиков! Вы получили галочку от HubTube!'
         });
         
-        loadNotifications();
-    }
-}
-
-// ==============================================
-// ФУНКЦИИ ПРОФИЛЯ
-// ==============================================
-
-// Показать редактор профиля
-function showEditProfileModal() {
-    if (!currentUser) return;
-    
-    document.getElementById('editUsername').value = currentUserData.username || '';
-    document.getElementById('editBio').value = currentUserData.bio || '';
-    document.getElementById('editAvatarUrl').value = currentUserData.avatarUrl || '';
-    document.getElementById('editBannerUrl').value = currentUserData.bannerUrl || '';
-    document.getElementById('editLinks').value = currentUserData.links ? currentUserData.links.join('\n') : '';
-    
-    showModal(editProfileModal);
-}
-
-// Сохранение профиля
-editProfileForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    if (!currentUser) return;
-    
-    const username = document.getElementById('editUsername').value.trim();
-    const bio = document.getElementById('editBio').value.trim();
-    const avatarUrl = document.getElementById('editAvatarUrl').value.trim();
-    const bannerUrl = document.getElementById('editBannerUrl').value.trim();
-    const links = document.getElementById('editLinks').value.trim();
-    
-    if (!username) {
-        showAlert(document.getElementById('editProfileAlert'), 'Введите имя канала', 'error');
-        return;
+        // Верификация канала
+        await db.collection('users').doc(currentUser.uid).update({
+            isVerified: true,
+            achieved100: true
+        });
     }
     
-    const updateData = {
-        username: username,
-        bio: bio,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    };
-    
-    if (avatarUrl) updateData.avatarUrl = avatarUrl;
-    if (bannerUrl) updateData.bannerUrl = bannerUrl;
-    if (links) {
-        updateData.links = links.split('\n').map(link => link.trim()).filter(link => link);
-    }
-    
-    const result = await firebaseManager.updateUserProfile(currentUser.uid, updateData);
-    if (result.success) {
-        // Обновляем данные пользователя
-        const userData = await firebaseManager.getUserData(currentUser.uid);
-        if (userData.success) {
-            currentUserData = userData.data;
-            updateUI();
-        }
-        
-        hideModal(editProfileModal);
-        showAlert(null, 'Профиль успешно обновлен', 'success');
-    } else {
-        showAlert(document.getElementById('editProfileAlert'), result.error, 'error');
-    }
-});
-
-// ==============================================
-// ФУНКЦИИ ЛАЙКОВ
-// ==============================================
-
-// Лайк видео
-async function toggleLikeVideo() {
-    if (!currentUser) {
-        showModal(authModal);
-        return;
-    }
-    
-    if (!currentVideo) return;
-    
-    const result = await firebaseManager.toggleLike(currentVideo.id, currentUser.uid);
-    if (result.success) {
-        isLiked = result.liked;
-        updateLikeButton();
-        loadVideos(); // Обновляем список видео
-    }
-}
-
-function updateLikeButton() {
-    if (isLiked) {
-        likeBtn.classList.add('liked');
-        likeBtn.innerHTML = '<i class="fas fa-thumbs-up"></i> <span id="likeCount">' + (currentVideo.likes || 0) + '</span>';
-    } else {
-        likeBtn.classList.remove('liked');
-        likeBtn.innerHTML = '<i class="fas fa-thumbs-up"></i> <span id="likeCount">' + (currentVideo.likes || 0) + '</span>';
-    }
-}
-
-// ==============================================
-// ОБНОВЛЕННЫЕ ОБРАБОТЧИКИ СОБЫТИЙ
-// ==============================================
-
-// Тематика
-themesContainer.addEventListener('click', (e) => {
-    if (e.target.classList.contains('theme-btn')) {
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.classList.remove('active');
+    // Сохранение достижений и показ уведомлений
+    for (const achievement of achievements) {
+        await db.collection('notifications').add({
+            userId: currentUser.uid,
+            type: 'achievement',
+            title: 'Достижение!',
+            message: achievement.message,
+            read: false,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         
-        e.target.classList.add('active');
-        currentTheme = e.target.dataset.theme;
-        loadVideos();
-    }
-});
-
-// Уведомления
-notificationsBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isVisible = notificationsDropdown.style.display === 'block';
-    notificationsDropdown.style.display = isVisible ? 'none' : 'block';
-    
-    if (!isVisible) {
-        loadNotifications();
-    }
-});
-
-markAllAsReadBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    markAllNotificationsAsRead();
-});
-
-// Закрытие уведомлений при клике вне
-document.addEventListener('click', () => {
-    notificationsDropdown.style.display = 'none';
-});
-
-// Комментарии
-submitComment.addEventListener('click', addComment);
-commentInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-        addComment();
-    }
-});
-
-// Делегирование событий для комментариев
-commentsList.addEventListener('click', (e) => {
-    const likeBtn = e.target.closest('.like-comment');
-    const replyBtn = e.target.closest('.reply-comment');
-    const pinBtn = e.target.closest('.pin-comment');
-    const heartBtn = e.target.closest('.heart-comment-btn');
-    
-    if (likeBtn) {
-        const commentId = likeBtn.dataset.commentId;
-        likeComment(commentId);
-    }
-    
-    if (replyBtn) {
-        const commentId = replyBtn.dataset.commentId;
-        // Реализация ответов на комментарии
-        commentInput.focus();
-        commentInput.value = `@${currentComments.find(c => c.id === commentId)?.username || ''} `;
-    }
-    
-    if (pinBtn) {
-        const commentId = pinBtn.dataset.commentId;
-        const videoId = pinBtn.dataset.videoId;
-        pinComment(commentId, videoId);
-    }
-    
-    if (heartBtn) {
-        const commentId = heartBtn.dataset.commentId;
-        const videoId = heartBtn.dataset.videoId;
-        heartComment(commentId, videoId);
-    }
-});
-
-// Лайки
-likeBtn.addEventListener('click', toggleLikeVideo);
-
-// Студия
-studioBtn.addEventListener('click', () => {
-    if (!currentUser) {
-        showModal(authModal);
-        return;
-    }
-    
-    // Открываем студию в новом окне
-    window.open('studio.html', '_blank');
-});
-
-// Редактирование профиля в выпадающем меню
-function showUserDropdown() {
-    // ... предыдущий код ...
-    
-    // Добавляем пункт редактирования профиля
-    dropdown.innerHTML = `
-        <div class="dropdown-item" onclick="window.location.href='studio.html'">
-            <i class="fas fa-tv"></i>
-            <span>Студия</span>
-        </div>
-        <div class="dropdown-item" onclick="showEditProfileModal()">
-            <i class="fas fa-user-edit"></i>
-            <span>Редактировать профиль</span>
-        </div>
-        <div class="dropdown-item" onclick="window.open('settings.html', '_blank')">
-            <i class="fas fa-cog"></i>
-            <span>Настройки</span>
-        </div>
-        <div class="dropdown-item logout" onclick="logout()">
-            <i class="fas fa-sign-out-alt"></i>
-            <span>Выйти</span>
-        </div>
-    `;
-    
-    // ... остальной код ...
-}
-
-// ==============================================
-// ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ
-// ==============================================
-
-// Показ видеоплеера (обновленная версия)
-async function playVideo(video) {
-    try {
-        currentVideo = video;
-        
-        // Увеличиваем счетчик просмотров
-        await firebaseManager.incrementViews(video.id);
-        
-        // Проверяем, лайкнул ли пользователь видео
-        if (currentUser) {
-            const likeResult = await firebaseManager.toggleLike(video.id, currentUser.uid);
-            if (likeResult.success) {
-                isLiked = likeResult.liked;
-            }
-        }
-        
-        // Обновляем информацию о видео
-        // ... предыдущий код ...
-        
-        // Загружаем комментарии
-        loadComments(video.id);
-        
-        // Обновляем кнопку лайка
-        updateLikeButton();
-        
-        // Обновляем кнопку подписки
-        await updateSubscribeButton();
-        
-        showModal(videoPlayerModal);
-    } catch (error) {
-        console.error('Ошибка при воспроизведении видео:', error);
-        showAlert(null, 'Ошибка при загрузке видео', 'error');
+        showToast(achievement.message, 'success');
     }
 }
 
-// Загрузка видео (обновленная)
-async function loadVideos() {
-    // Показываем скелетоны загрузки
-    videoGrid.innerHTML = `
-        <div class="video-card skeleton" style="height: 320px;"></div>
-        <div class="video-card skeleton" style="height: 320px;"></div>
-        <div class="video-card skeleton" style="height: 320px;"></div>
-        <div class="video-card skeleton" style="height: 320px;"></div>
-    `;
-    
-    const result = await firebaseManager.getVideos(20, currentCategory === 'all' ? null : currentCategory);
-    if (result.success) {
-        // Фильтруем по типу (Shorts или обычные видео)
-        let filteredVideos = result.videos;
-        if (currentCategory === 'short') {
-            filteredVideos = result.videos.filter(video => video.type === 'short');
-        } else if (currentCategory !== 'all') {
-            filteredVideos = result.videos.filter(video => video.type !== 'short');
-        }
-        
-        renderVideos(filteredVideos);
-    } else {
-        videoGrid.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-exclamation-triangle"></i>
-                <h3>Ошибка загрузки видео</h3>
-                <p>${result.error}</p>
-            </div>
-        `;
-    }
-}
-
-// Обновление UI
-function updateUI() {
-    if (currentUser && currentUserData) {
-        authButtons.style.display = 'none';
-        loggedInButtons.style.display = 'flex';
-        
-        // Используем кастомный аватар если есть
-        if (currentUserData.avatarUrl) {
-            userAvatar.innerHTML = `<img src="${currentUserData.avatarUrl}" alt="${currentUserData.username}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-        } else {
-            userAvatar.textContent = currentUserData.username.charAt(0).toUpperCase();
-            userAvatar.style.background = currentUserData.avatarColor;
-        }
-        
-        username.textContent = currentUserData.username;
-        
-        // Загружаем уведомления
-        loadNotifications();
-        
-        // Проверяем достижения
+// Периодическая проверка достижений
+setInterval(() => {
+    if (currentUser) {
         checkAchievements();
-    } else {
-        authButtons.style.display = 'flex';
-        loggedInButtons.style.display = 'none';
-        notificationBadge.style.display = 'none';
     }
-    loadVideos();
-}
-
-// ==============================================
-// ИНИЦИАЛИЗАЦИЯ
-// ==============================================
-
-// Проверка состояния авторизации при загрузке
-auth.onAuthStateChanged(async (user) => {
-    if (user) {
-        const result = await firebaseManager.getUserData(user.uid);
-        if (result.success) {
-            currentUser = user;
-            currentUserData = result.data;
-            updateUI();
-        }
-    } else {
-        currentUser = null;
-        currentUserData = null;
-        updateUI();
-    }
-});
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    loadVideos();
-    console.log('HubTube загружен успешно!');
-});
-
-// Глобальные функции
-window.showEditProfileModal = showEditProfileModal;
-window.logout = logout;
-window.showUploadModal = showUploadModal;
+}, 60000); // Каждую минуту
